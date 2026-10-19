@@ -2358,3 +2358,782 @@ RMAPI Quaternion QuaternionCubicHermiteSpline(Quaternion q1, Quaternion outTange
     float h10 = t3 - 2*t2 + t;
     float h01 = -2*t3 + 3*t2;
     float h11 = t3 - t2;
+
+    Quaternion p0 = QuaternionScale(q1, h00);
+    Quaternion m0 = QuaternionScale(outTangent1, h10);
+    Quaternion p1 = QuaternionScale(q2, h01);
+    Quaternion m1 = QuaternionScale(inTangent2, h11);
+
+    Quaternion result = { 0 };
+
+    result = QuaternionAdd(p0, m0);
+    result = QuaternionAdd(result, p1);
+    result = QuaternionAdd(result, m1);
+    result = QuaternionNormalize(result);
+
+    return result;
+}
+
+// Calculate quaternion based on the rotation from one vector to another
+RMAPI Quaternion QuaternionFromVector3ToVector3(Vector3 from, Vector3 to)
+{
+    Quaternion result = { 0 };
+
+    float cos2Theta = (from.x*to.x + from.y*to.y + from.z*to.z); // Vector3DotProduct(from, to)
+    Vector3 cross = { from.y*to.z - from.z*to.y, from.z*to.x - from.x*to.z, from.x*to.y - from.y*to.x }; // Vector3CrossProduct(from, to)
+
+    result.x = cross.x;
+    result.y = cross.y;
+    result.z = cross.z;
+    result.w = sqrtf(cross.x*cross.x + cross.y*cross.y + cross.z*cross.z + cos2Theta*cos2Theta) + cos2Theta;
+
+    // QuaternionNormalize(q);
+    // NOTE: Normalize to essentially nlerp the original and identity to 0.5
+    Quaternion q = result;
+    float length = sqrtf(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w);
+    if (length == 0.0f) length = 1.0f;
+    float ilength = 1.0f/length;
+
+    result.x = q.x*ilength;
+    result.y = q.y*ilength;
+    result.z = q.z*ilength;
+    result.w = q.w*ilength;
+
+    return result;
+}
+
+// Get a quaternion for a given rotation matrix
+RMAPI Quaternion QuaternionFromMatrix(Matrix mat)
+{
+    Quaternion result = { 0 };
+
+    float fourWSquaredMinus1 = mat.m0  + mat.m5 + mat.m10;
+    float fourXSquaredMinus1 = mat.m0  - mat.m5 - mat.m10;
+    float fourYSquaredMinus1 = mat.m5  - mat.m0 - mat.m10;
+    float fourZSquaredMinus1 = mat.m10 - mat.m0 - mat.m5;
+
+    int biggestIndex = 0;
+    float fourBiggestSquaredMinus1 = fourWSquaredMinus1;
+    if (fourXSquaredMinus1 > fourBiggestSquaredMinus1)
+    {
+        fourBiggestSquaredMinus1 = fourXSquaredMinus1;
+        biggestIndex = 1;
+    }
+
+    if (fourYSquaredMinus1 > fourBiggestSquaredMinus1)
+    {
+        fourBiggestSquaredMinus1 = fourYSquaredMinus1;
+        biggestIndex = 2;
+    }
+
+    if (fourZSquaredMinus1 > fourBiggestSquaredMinus1)
+    {
+        fourBiggestSquaredMinus1 = fourZSquaredMinus1;
+        biggestIndex = 3;
+    }
+
+    float biggestVal = sqrtf(fourBiggestSquaredMinus1 + 1.0f)*0.5f;
+    float mult = 0.25f/biggestVal;
+
+    switch (biggestIndex)
+    {
+        case 0:
+            result.w = biggestVal;
+            result.x = (mat.m6 - mat.m9)*mult;
+            result.y = (mat.m8 - mat.m2)*mult;
+            result.z = (mat.m1 - mat.m4)*mult;
+            break;
+        case 1:
+            result.x = biggestVal;
+            result.w = (mat.m6 - mat.m9)*mult;
+            result.y = (mat.m1 + mat.m4)*mult;
+            result.z = (mat.m8 + mat.m2)*mult;
+            break;
+        case 2:
+            result.y = biggestVal;
+            result.w = (mat.m8 - mat.m2)*mult;
+            result.x = (mat.m1 + mat.m4)*mult;
+            result.z = (mat.m6 + mat.m9)*mult;
+            break;
+        case 3:
+            result.z = biggestVal;
+            result.w = (mat.m1 - mat.m4)*mult;
+            result.x = (mat.m8 + mat.m2)*mult;
+            result.y = (mat.m6 + mat.m9)*mult;
+            break;
+    }
+
+    return result;
+}
+
+// Get a matrix for a given quaternion
+RMAPI Matrix QuaternionToMatrix(Quaternion q)
+{
+    Matrix result = { 1.0f, 0.0f, 0.0f, 0.0f,
+                      0.0f, 1.0f, 0.0f, 0.0f,
+                      0.0f, 0.0f, 1.0f, 0.0f,
+                      0.0f, 0.0f, 0.0f, 1.0f }; // MatrixIdentity()
+
+    float a2 = q.x*q.x;
+    float b2 = q.y*q.y;
+    float c2 = q.z*q.z;
+    float ac = q.x*q.z;
+    float ab = q.x*q.y;
+    float bc = q.y*q.z;
+    float ad = q.w*q.x;
+    float bd = q.w*q.y;
+    float cd = q.w*q.z;
+
+    result.m0 = 1 - 2*(b2 + c2);
+    result.m1 = 2*(ab + cd);
+    result.m2 = 2*(ac - bd);
+
+    result.m4 = 2*(ab - cd);
+    result.m5 = 1 - 2*(a2 + c2);
+    result.m6 = 2*(bc + ad);
+
+    result.m8 = 2*(ac + bd);
+    result.m9 = 2*(bc - ad);
+    result.m10 = 1 - 2*(a2 + b2);
+
+    return result;
+}
+
+// Get rotation quaternion for an angle and axis
+// NOTE: Angle must be provided in radians
+RMAPI Quaternion QuaternionFromAxisAngle(Vector3 axis, float angle)
+{
+    Quaternion result = { 0.0f, 0.0f, 0.0f, 1.0f };
+
+    float length = sqrtf(axis.x*axis.x + axis.y*axis.y + axis.z*axis.z);
+
+    if (length != 0.0f)
+    {
+        angle *= 0.5f;
+
+        // Vector3Normalize(axis)
+        float ilength = 1.0f/length;
+        axis.x *= ilength;
+        axis.y *= ilength;
+        axis.z *= ilength;
+
+        float sinres = sinf(angle);
+        float cosres = cosf(angle);
+
+        result.x = axis.x*sinres;
+        result.y = axis.y*sinres;
+        result.z = axis.z*sinres;
+        result.w = cosres;
+
+        // QuaternionNormalize(q);
+        Quaternion q = result;
+        length = sqrtf(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w);
+        if (length == 0.0f) length = 1.0f;
+        ilength = 1.0f/length;
+        result.x = q.x*ilength;
+        result.y = q.y*ilength;
+        result.z = q.z*ilength;
+        result.w = q.w*ilength;
+    }
+
+    return result;
+}
+
+// Get the rotation angle and axis for a given quaternion
+RMAPI void QuaternionToAxisAngle(Quaternion q, Vector3 *outAxis, float *outAngle)
+{
+    if (fabsf(q.w) > 1.0f)
+    {
+        // QuaternionNormalize(q);
+        float length = sqrtf(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w);
+        if (length == 0.0f) length = 1.0f;
+        float ilength = 1.0f/length;
+
+        q.x = q.x*ilength;
+        q.y = q.y*ilength;
+        q.z = q.z*ilength;
+        q.w = q.w*ilength;
+    }
+
+    Vector3 resAxis = { 0.0f, 0.0f, 0.0f };
+    float resAngle = 2.0f*acosf(q.w);
+    float den = sqrtf(1.0f - q.w*q.w);
+
+    if (den > EPSILON)
+    {
+        resAxis.x = q.x/den;
+        resAxis.y = q.y/den;
+        resAxis.z = q.z/den;
+    }
+    else
+    {
+        // This occurs when the angle is zero
+        // Not a problem, set an arbitrary normalized axis
+        resAxis.x = 1.0f;
+    }
+
+    *outAxis = resAxis;
+    *outAngle = resAngle;
+}
+
+// Get the quaternion equivalent to Euler angles
+// NOTE: Rotation order is ZYX
+RMAPI Quaternion QuaternionFromEuler(float pitch, float yaw, float roll)
+{
+    Quaternion result = { 0 };
+
+    float x0 = cosf(pitch*0.5f);
+    float x1 = sinf(pitch*0.5f);
+    float y0 = cosf(yaw*0.5f);
+    float y1 = sinf(yaw*0.5f);
+    float z0 = cosf(roll*0.5f);
+    float z1 = sinf(roll*0.5f);
+
+    result.x = x1*y0*z0 - x0*y1*z1;
+    result.y = x0*y1*z0 + x1*y0*z1;
+    result.z = x0*y0*z1 - x1*y1*z0;
+    result.w = x0*y0*z0 + x1*y1*z1;
+
+    return result;
+}
+
+// Get the Euler angles equivalent to quaternion (roll, pitch, yaw)
+// NOTE: Angles are returned in a Vector3 struct in radians
+RMAPI Vector3 QuaternionToEuler(Quaternion q)
+{
+    Vector3 result = { 0 };
+
+    // Roll (x-axis rotation)
+    float x0 = 2.0f*(q.w*q.x + q.y*q.z);
+    float x1 = 1.0f - 2.0f*(q.x*q.x + q.y*q.y);
+    result.x = atan2f(x0, x1);
+
+    // Pitch (y-axis rotation)
+    float y0 = 2.0f*(q.w*q.y - q.z*q.x);
+    y0 = y0 > 1.0f ? 1.0f : y0;
+    y0 = y0 < -1.0f ? -1.0f : y0;
+    result.y = asinf(y0);
+
+    // Yaw (z-axis rotation)
+    float z0 = 2.0f*(q.w*q.z + q.x*q.y);
+    float z1 = 1.0f - 2.0f*(q.y*q.y + q.z*q.z);
+    result.z = atan2f(z0, z1);
+
+    return result;
+}
+
+// Transform a quaternion given a transformation matrix
+RMAPI Quaternion QuaternionTransform(Quaternion q, Matrix mat)
+{
+    Quaternion result = { 0 };
+
+    result.x = mat.m0*q.x + mat.m4*q.y + mat.m8*q.z + mat.m12*q.w;
+    result.y = mat.m1*q.x + mat.m5*q.y + mat.m9*q.z + mat.m13*q.w;
+    result.z = mat.m2*q.x + mat.m6*q.y + mat.m10*q.z + mat.m14*q.w;
+    result.w = mat.m3*q.x + mat.m7*q.y + mat.m11*q.z + mat.m15*q.w;
+
+    return result;
+}
+
+// Check whether two given quaternions are almost equal
+RMAPI int QuaternionEquals(Quaternion p, Quaternion q)
+{
+#if !defined(EPSILON)
+    #define EPSILON 0.000001f
+#endif
+
+    int result = (((fabsf(p.x - q.x)) <= (EPSILON*fmaxf(1.0f, fmaxf(fabsf(p.x), fabsf(q.x))))) &&
+                  ((fabsf(p.y - q.y)) <= (EPSILON*fmaxf(1.0f, fmaxf(fabsf(p.y), fabsf(q.y))))) &&
+                  ((fabsf(p.z - q.z)) <= (EPSILON*fmaxf(1.0f, fmaxf(fabsf(p.z), fabsf(q.z))))) &&
+                  ((fabsf(p.w - q.w)) <= (EPSILON*fmaxf(1.0f, fmaxf(fabsf(p.w), fabsf(q.w)))))) ||
+                 (((fabsf(p.x + q.x)) <= (EPSILON*fmaxf(1.0f, fmaxf(fabsf(p.x), fabsf(q.x))))) &&
+                  ((fabsf(p.y + q.y)) <= (EPSILON*fmaxf(1.0f, fmaxf(fabsf(p.y), fabsf(q.y))))) &&
+                  ((fabsf(p.z + q.z)) <= (EPSILON*fmaxf(1.0f, fmaxf(fabsf(p.z), fabsf(q.z))))) &&
+                  ((fabsf(p.w + q.w)) <= (EPSILON*fmaxf(1.0f, fmaxf(fabsf(p.w), fabsf(q.w))))));
+
+    return result;
+}
+
+// Compose a transformation matrix from rotational, translational and scaling components
+// TODO: This function is not following raymath conventions defined in header: NOT self-contained
+RMAPI Matrix MatrixCompose(Vector3 translation, Quaternion rotation, Vector3 scale)
+{
+    // Initialize vectors
+    Vector3 right = { 1.0f, 0.0f, 0.0f };
+    Vector3 up = { 0.0f, 1.0f, 0.0f };
+    Vector3 forward = { 0.0f, 0.0f, 1.0f };
+
+    // Scale vectors
+    right = Vector3Scale(right, scale.x);
+    up = Vector3Scale(up, scale.y);
+    forward = Vector3Scale(forward , scale.z);
+
+    // Rotate vectors
+    right = Vector3RotateByQuaternion(right, rotation);
+    up = Vector3RotateByQuaternion(up, rotation);
+    forward = Vector3RotateByQuaternion(forward, rotation);
+
+    // Set result matrix output
+    Matrix result = {
+        right.x, up.x, forward.x, translation.x,
+        right.y, up.y, forward.y, translation.y,
+        right.z, up.z, forward.z, translation.z,
+        0.0f, 0.0f, 0.0f, 1.0f
+    };
+
+    return result;
+}
+
+// Decompose a transformation matrix into its rotational, translational and scaling components and remove shear
+// TODO: This function is not following raymath conventions defined in header: NOT self-contained
+RMAPI void MatrixDecompose(Matrix mat, Vector3 *translation, Quaternion *rotation, Vector3 *scale)
+{
+    float eps = (float)1e-9;
+
+    // Extract Translation
+    translation->x = mat.m12;
+    translation->y = mat.m13;
+    translation->z = mat.m14;
+
+    // Matrix Columns - Rotation will be extracted into here
+    Vector3 matColumns[3] = {{ mat.m0, mat.m4, mat.m8 },
+                             { mat.m1, mat.m5, mat.m9 },
+                             { mat.m2, mat.m6, mat.m10 }};
+
+    // Shear Parameters XY, XZ, and YZ (extract and ignored)
+    float shear[3] = { 0 };
+
+    // Normalized Scale Parameters
+    Vector3 scl = { 0 };
+
+    // Max-Normalizing helps numerical stability
+    float stabilizer = eps;
+    for (int i = 0; i < 3; i++)
+    {
+        stabilizer = fmaxf(stabilizer, fabsf(matColumns[i].x));
+        stabilizer = fmaxf(stabilizer, fabsf(matColumns[i].y));
+        stabilizer = fmaxf(stabilizer, fabsf(matColumns[i].z));
+    }
+    matColumns[0] = Vector3Scale(matColumns[0], 1.0f / stabilizer);
+    matColumns[1] = Vector3Scale(matColumns[1], 1.0f / stabilizer);
+    matColumns[2] = Vector3Scale(matColumns[2], 1.0f / stabilizer);
+
+    // X Scale
+    scl.x = Vector3Length(matColumns[0]);
+    if (scl.x > eps) matColumns[0] = Vector3Scale(matColumns[0], 1.0f / scl.x);
+
+    // Compute XY shear and make col2 orthogonal
+    shear[0] = Vector3DotProduct(matColumns[0], matColumns[1]);
+    matColumns[1] = Vector3Subtract(matColumns[1], Vector3Scale(matColumns[0], shear[0]));
+
+    // Y Scale
+    scl.y = Vector3Length(matColumns[1]);
+    if (scl.y > eps)
+    {
+        matColumns[1] = Vector3Scale(matColumns[1], 1.0f / scl.y);
+        shear[0] /= scl.y; // Correct XY shear
+    }
+
+    // Compute XZ and YZ shears and make col3 orthogonal
+    shear[1] = Vector3DotProduct(matColumns[0], matColumns[2]);
+    matColumns[2] = Vector3Subtract(matColumns[2], Vector3Scale(matColumns[0], shear[1]));
+    shear[2] = Vector3DotProduct(matColumns[1], matColumns[2]);
+    matColumns[2] = Vector3Subtract(matColumns[2], Vector3Scale(matColumns[1], shear[2]));
+
+    // Z Scale
+    scl.z = Vector3Length(matColumns[2]);
+    if (scl.z > eps)
+    {
+        matColumns[2] = Vector3Scale(matColumns[2], 1.0f / scl.z);
+        shear[1] /= scl.z; // Correct XZ shear
+        shear[2] /= scl.z; // Correct YZ shear
+    }
+
+    // matColumns are now orthonormal in O(3). Now ensure its in SO(3) by enforcing det = 1
+    if (Vector3DotProduct(matColumns[0], Vector3CrossProduct(matColumns[1], matColumns[2])) < 0)
+    {
+        scl = Vector3Negate(scl);
+        matColumns[0] = Vector3Negate(matColumns[0]);
+        matColumns[1] = Vector3Negate(matColumns[1]);
+        matColumns[2] = Vector3Negate(matColumns[2]);
+    }
+
+    // Set Scale
+    *scale = Vector3Scale(scl, stabilizer);
+
+    // Extract Rotation
+    Matrix rotationMatrix = { matColumns[0].x, matColumns[0].y, matColumns[0].z, 0,
+                             matColumns[1].x, matColumns[1].y, matColumns[1].z, 0,
+                             matColumns[2].x, matColumns[2].y, matColumns[2].z, 0,
+                             0, 0, 0, 1 };
+    *rotation = QuaternionFromMatrix(rotationMatrix);
+}
+
+#if defined(__cplusplus) && !defined(RAYMATH_DISABLE_CPP_OPERATORS)
+
+// Optional C++ math operators
+//-------------------------------------------------------------------------------
+
+// Vector2 operators
+static constexpr Vector2 Vector2Zeros = { 0, 0 };
+static constexpr Vector2 Vector2Ones = { 1, 1 };
+static constexpr Vector2 Vector2UnitX = { 1, 0 };
+static constexpr Vector2 Vector2UnitY = { 0, 1 };
+
+inline Vector2 operator + (const Vector2& lhs, const Vector2& rhs)
+{
+    return Vector2Add(lhs, rhs);
+}
+
+inline const Vector2& operator += (Vector2& lhs, const Vector2& rhs)
+{
+    lhs = Vector2Add(lhs, rhs);
+    return lhs;
+}
+
+inline Vector2 operator - (const Vector2& lhs, const Vector2& rhs)
+{
+    return Vector2Subtract(lhs, rhs);
+}
+
+inline const Vector2& operator -= (Vector2& lhs, const Vector2& rhs)
+{
+    lhs = Vector2Subtract(lhs, rhs);
+    return lhs;
+}
+
+inline Vector2 operator * (const Vector2& lhs, const float& rhs)
+{
+    return Vector2Scale(lhs, rhs);
+}
+
+inline const Vector2& operator *= (Vector2& lhs, const float& rhs)
+{
+    lhs = Vector2Scale(lhs, rhs);
+    return lhs;
+}
+
+inline Vector2 operator * (const Vector2& lhs, const Vector2& rhs)
+{
+    return Vector2Multiply(lhs, rhs);
+}
+
+inline const Vector2& operator *= (Vector2& lhs, const Vector2& rhs)
+{
+    lhs = Vector2Multiply(lhs, rhs);
+    return lhs;
+}
+
+inline Vector2 operator * (const Vector2& lhs, const Matrix& rhs)
+{
+    return Vector2Transform(lhs, rhs);
+}
+
+inline const Vector2& operator *= (Vector2& lhs, const Matrix& rhs)
+{
+    lhs = Vector2Transform(lhs, rhs);
+    return lhs;
+}
+
+inline Vector2 operator / (const Vector2& lhs, const float& rhs)
+{
+    return Vector2Scale(lhs, 1.0f/rhs);
+}
+
+inline const Vector2& operator /= (Vector2& lhs, const float& rhs)
+{
+    lhs = Vector2Scale(lhs, 1.0f/rhs);
+    return lhs;
+}
+
+inline Vector2 operator / (const Vector2& lhs, const Vector2& rhs)
+{
+    return Vector2Divide(lhs, rhs);
+}
+
+inline const Vector2& operator /= (Vector2& lhs, const Vector2& rhs)
+{
+    lhs = Vector2Divide(lhs, rhs);
+    return lhs;
+}
+
+inline bool operator == (const Vector2& lhs, const Vector2& rhs)
+{
+    return FloatEquals(lhs.x, rhs.x) && FloatEquals(lhs.y, rhs.y);
+}
+
+inline bool operator != (const Vector2& lhs, const Vector2& rhs)
+{
+    return !FloatEquals(lhs.x, rhs.x) || !FloatEquals(lhs.y, rhs.y);
+}
+
+// Vector3 operators
+static constexpr Vector3 Vector3Zeros = { 0, 0, 0 };
+static constexpr Vector3 Vector3Ones = { 1, 1, 1 };
+static constexpr Vector3 Vector3UnitX = { 1, 0, 0 };
+static constexpr Vector3 Vector3UnitY = { 0, 1, 0 };
+static constexpr Vector3 Vector3UnitZ = { 0, 0, 1 };
+
+inline Vector3 operator + (const Vector3& lhs, const Vector3& rhs)
+{
+    return Vector3Add(lhs, rhs);
+}
+
+inline const Vector3& operator += (Vector3& lhs, const Vector3& rhs)
+{
+    lhs = Vector3Add(lhs, rhs);
+    return lhs;
+}
+
+inline Vector3 operator - (const Vector3& lhs, const Vector3& rhs)
+{
+    return Vector3Subtract(lhs, rhs);
+}
+
+inline const Vector3& operator -= (Vector3& lhs, const Vector3& rhs)
+{
+    lhs = Vector3Subtract(lhs, rhs);
+    return lhs;
+}
+
+inline Vector3 operator * (const Vector3& lhs, const float& rhs)
+{
+    return Vector3Scale(lhs, rhs);
+}
+
+inline const Vector3& operator *= (Vector3& lhs, const float& rhs)
+{
+    lhs = Vector3Scale(lhs, rhs);
+    return lhs;
+}
+
+inline Vector3 operator * (const Vector3& lhs, const Vector3& rhs)
+{
+    return Vector3Multiply(lhs, rhs);
+}
+
+inline const Vector3& operator *= (Vector3& lhs, const Vector3& rhs)
+{
+    lhs = Vector3Multiply(lhs, rhs);
+    return lhs;
+}
+
+inline Vector3 operator * (const Vector3& lhs, const Matrix& rhs)
+{
+    return Vector3Transform(lhs, rhs);
+}
+
+inline const Vector3& operator *= (Vector3& lhs, const Matrix& rhs)
+{
+    lhs = Vector3Transform(lhs, rhs);
+    return lhs;
+}
+
+inline Vector3 operator / (const Vector3& lhs, const float& rhs)
+{
+    return Vector3Scale(lhs, 1.0f/rhs);
+}
+
+inline const Vector3& operator /= (Vector3& lhs, const float& rhs)
+{
+    lhs = Vector3Scale(lhs, 1.0f/rhs);
+    return lhs;
+}
+
+inline Vector3 operator / (const Vector3& lhs, const Vector3& rhs)
+{
+    return Vector3Divide(lhs, rhs);
+}
+
+inline const Vector3& operator /= (Vector3& lhs, const Vector3& rhs)
+{
+    lhs = Vector3Divide(lhs, rhs);
+    return lhs;
+}
+
+inline bool operator == (const Vector3& lhs, const Vector3& rhs)
+{
+    return FloatEquals(lhs.x, rhs.x) && FloatEquals(lhs.y, rhs.y) && FloatEquals(lhs.z, rhs.z);
+}
+
+inline bool operator != (const Vector3& lhs, const Vector3& rhs)
+{
+    return !FloatEquals(lhs.x, rhs.x) || !FloatEquals(lhs.y, rhs.y) || !FloatEquals(lhs.z, rhs.z);
+}
+
+// Vector4 operators
+static constexpr Vector4 Vector4Zeros = { 0, 0, 0, 0 };
+static constexpr Vector4 Vector4Ones = { 1, 1, 1, 1 };
+static constexpr Vector4 Vector4UnitX = { 1, 0, 0, 0 };
+static constexpr Vector4 Vector4UnitY = { 0, 1, 0, 0 };
+static constexpr Vector4 Vector4UnitZ = { 0, 0, 1, 0 };
+static constexpr Vector4 Vector4UnitW = { 0, 0, 0, 1 };
+
+inline Vector4 operator + (const Vector4& lhs, const Vector4& rhs)
+{
+    return Vector4Add(lhs, rhs);
+}
+
+inline const Vector4& operator += (Vector4& lhs, const Vector4& rhs)
+{
+    lhs = Vector4Add(lhs, rhs);
+    return lhs;
+}
+
+inline Vector4 operator - (const Vector4& lhs, const Vector4& rhs)
+{
+    return Vector4Subtract(lhs, rhs);
+}
+
+inline const Vector4& operator -= (Vector4& lhs, const Vector4& rhs)
+{
+    lhs = Vector4Subtract(lhs, rhs);
+    return lhs;
+}
+
+inline Vector4 operator * (const Vector4& lhs, const float& rhs)
+{
+    return Vector4Scale(lhs, rhs);
+}
+
+inline const Vector4& operator *= (Vector4& lhs, const float& rhs)
+{
+    lhs = Vector4Scale(lhs, rhs);
+    return lhs;
+}
+
+inline Vector4 operator * (const Vector4& lhs, const Vector4& rhs)
+{
+    return Vector4Multiply(lhs, rhs);
+}
+
+inline const Vector4& operator *= (Vector4& lhs, const Vector4& rhs)
+{
+    lhs = Vector4Multiply(lhs, rhs);
+    return lhs;
+}
+
+inline Vector4 operator / (const Vector4& lhs, const float& rhs)
+{
+    return Vector4Scale(lhs, 1.0f/rhs);
+}
+
+inline const Vector4& operator /= (Vector4& lhs, const float& rhs)
+{
+    lhs = Vector4Scale(lhs, 1.0f/rhs);
+    return lhs;
+}
+
+inline Vector4 operator / (const Vector4& lhs, const Vector4& rhs)
+{
+    return Vector4Divide(lhs, rhs);
+}
+
+inline const Vector4& operator /= (Vector4& lhs, const Vector4& rhs)
+{
+    lhs = Vector4Divide(lhs, rhs);
+    return lhs;
+}
+
+inline bool operator == (const Vector4& lhs, const Vector4& rhs)
+{
+    return FloatEquals(lhs.x, rhs.x) && FloatEquals(lhs.y, rhs.y) && FloatEquals(lhs.z, rhs.z) && FloatEquals(lhs.w, rhs.w);
+}
+
+inline bool operator != (const Vector4& lhs, const Vector4& rhs)
+{
+    return !FloatEquals(lhs.x, rhs.x) || !FloatEquals(lhs.y, rhs.y) || !FloatEquals(lhs.z, rhs.z) || !FloatEquals(lhs.w, rhs.w);
+}
+
+// Quaternion operators
+static constexpr Quaternion QuaternionZeros = { 0, 0, 0, 0 };
+static constexpr Quaternion QuaternionOnes = { 1, 1, 1, 1 };
+static constexpr Quaternion QuaternionUnitX = { 0, 0, 0, 1 };
+
+inline Quaternion operator + (const Quaternion& lhs, const float& rhs)
+{
+    return QuaternionAddValue(lhs, rhs);
+}
+
+inline const Quaternion& operator += (Quaternion& lhs, const float& rhs)
+{
+    lhs = QuaternionAddValue(lhs, rhs);
+    return lhs;
+}
+
+inline Quaternion operator - (const Quaternion& lhs, const float& rhs)
+{
+    return QuaternionSubtractValue(lhs, rhs);
+}
+
+inline const Quaternion& operator -= (Quaternion& lhs, const float& rhs)
+{
+    lhs = QuaternionSubtractValue(lhs, rhs);
+    return lhs;
+}
+
+inline Quaternion operator * (const Quaternion& lhs, const Matrix& rhs)
+{
+    return QuaternionTransform(lhs, rhs);
+}
+
+inline const Quaternion& operator *= (Quaternion& lhs, const Matrix& rhs)
+{
+    lhs = QuaternionTransform(lhs, rhs);
+    return lhs;
+}
+
+// Matrix operators
+static constexpr Matrix MatrixUnit = { 1, 0, 0, 0,
+                                       0, 1, 0, 0,
+                                       0, 0, 1, 0,
+                                       0, 0, 0, 1 };
+
+inline Matrix operator + (const Matrix& lhs, const Matrix& rhs)
+{
+    return MatrixAdd(lhs, rhs);
+}
+
+inline const Matrix& operator += (Matrix& lhs, const Matrix& rhs)
+{
+    lhs = MatrixAdd(lhs, rhs);
+    return lhs;
+}
+
+inline Matrix operator - (const Matrix& lhs, const Matrix& rhs)
+{
+    return MatrixSubtract(lhs, rhs);
+}
+
+inline const Matrix& operator -= (Matrix& lhs, const Matrix& rhs)
+{
+    lhs = MatrixSubtract(lhs, rhs);
+    return lhs;
+}
+
+inline Matrix operator * (const Matrix& lhs, const Matrix& rhs)
+{
+    return MatrixMultiply(lhs, rhs);
+}
+
+inline const Matrix& operator *= (Matrix& lhs, const Matrix& rhs)
+{
+    lhs = MatrixMultiply(lhs, rhs);
+    return lhs;
+}
+
+inline Matrix operator * (const Matrix& lhs, const float value)
+{
+    return MatrixMultiplyValue(lhs, value);
+}
+
+inline const Matrix& operator *= (Matrix& lhs, const float value)
+{
+    lhs = MatrixMultiplyValue(lhs, value);
+    return lhs;
+}
+
+//-------------------------------------------------------------------------------
+#endif // C++ operators
+
+#endif // RAYMATH_H
