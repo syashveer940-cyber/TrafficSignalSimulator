@@ -250,3 +250,66 @@ public:
         int clockwiseOrder[4] = {0, 2, 1, 3}; std::vector<int> emergencyLanes;
         for (int i = 0; i < 4; i++) { lanes[i]->setState(RED_STATE); if (lanes[i]->getEmergencyCount() > 0) emergencyLanes.push_back(i); }
         if (!emergencyLanes.empty()) {
+for (int el : emergencyLanes) lanes[el]->setState(GREEN_STATE);
+            for (int k = 0; k < 4; k++) if (lanes[clockwiseOrder[k]]->getEmergencyCount() > 0) activeLaneIndex = clockwiseOrder[(k + 1) % 4];
+        } else { lanes[activeLaneIndex]->setState(GREEN_STATE); activeLaneIndex = activeLaneIndex == 0 ? 2 : (activeLaneIndex == 2 ? 1 : (activeLaneIndex == 1 ? 3 : 0)); }
+    }
+    void update(std::vector<CarRect>& allCars, const std::vector<CrashEvent>& crashes, Intersection* grid[6]) { for (int i = 0; i < 4; i++) lanes[i]->updateAnimations(id, i, allCars, neighbors, crashes, grid); }
+    
+    // Explicitly implemented to prevent compiler errors
+    void removeCrashedVehicles(const std::vector<int>& crashedIDs) { for (int i = 0; i < 4; i++) lanes[i]->removeCrashedVehicles(crashedIDs); }
+    
+    void drawStopLines() { DrawRectangle(center.x - 140, center.y - 144, 140, 4, WHITE); DrawRectangle(center.x, center.y + 140, 140, 4, WHITE); DrawRectangle(center.x + 140, center.y - 140, 4, 140, WHITE); DrawRectangle(center.x - 144, center.y, 4, 140, WHITE); }
+};
+
+int getBFSPathDistance(int startId, int targetId, const std::vector<CrashEvent>& crashes, Intersection* grid[6]) {
+    if (startId == targetId) return 0;
+    std::vector<int> dist(6, -1), q; dist[startId] = 0; q.push_back(startId); int head = 0;
+    while (head < (int)q.size()) {
+        int curr = q[head++]; if (curr == targetId) return dist[curr];
+        for (int dir = 0; dir < 4; dir++) { 
+            Intersection* nbr = grid[curr]->neighbors[dir]; 
+            if (nbr != nullptr && dist[nbr->id] == -1 && !isPathBlockedByCrash(grid[curr]->center, nbr->center, crashes, 90.0f)) { 
+                dist[nbr->id] = dist[curr] + 1; q.push_back(nbr->id); 
+            } 
+        }
+    }
+    return 99999; 
+}
+
+int getShortestPathNextNeighbor(int startId, int targetId, const std::vector<CrashEvent>& crashes, Intersection* grid[6]) {
+    if (startId == targetId) return startId;
+    std::vector<int> parent(6, -1), q; std::vector<bool> visited(6, false); visited[startId] = true; q.push_back(startId); int head = 0; bool found = false;
+    while (head < (int)q.size()) {
+        int curr = q[head++]; if (curr == targetId) { found = true; break; }
+        for (int dir = 0; dir < 4; dir++) { 
+            Intersection* nbr = grid[curr]->neighbors[dir]; 
+            if (nbr != nullptr && !visited[nbr->id] && !isPathBlockedByCrash(grid[curr]->center, nbr->center, crashes, 90.0f)) { 
+                visited[nbr->id] = true; parent[nbr->id] = curr; q.push_back(nbr->id); 
+            } 
+        }
+    }
+    if (!found) return -1;
+    int curr = targetId; while (parent[curr] != -1 && parent[curr] != startId) curr = parent[curr]; return curr;
+}
+
+void TrafficLane::updateAnimations(int currentIntId, int laneIndex, const std::vector<CarRect>& allCars, Intersection* neighbors[4], const std::vector<CrashEvent>& crashes, Intersection* allGrid[6]) {
+    for (auto it = activeUTurns.begin(); it != activeUTurns.end(); ) {
+        float dist = max(10.0f, hypot(it->p0.x - it->p3.x, it->p0.y - it->p3.y) * 1.5f); 
+        float stepSize = 3.0f / dist;
+        
+        float nextT = min(1.0f, it->progress + stepSize);
+        float u = 1.0f - nextT;
+        Vector2 nextP = { u*u*u*it->p0.x + 3*u*u*nextT*it->p1.x + 3*u*nextT*nextT*it->p2.x + nextT*nextT*nextT*it->p3.x, u*u*u*it->p0.y + 3*u*u*nextT*it->p1.y + 3*u*nextT*nextT*it->p2.y + nextT*nextT*nextT*it->p3.y };
+        
+        bool blocked = false;
+        for (const auto& other : allCars) {
+            if (other.id != it->id) {
+                float distToOther = hypot(nextP.x - (other.rect.x + 20.0f), nextP.y - (other.rect.y + 20.0f));
+                if (distToOther < 46.0f) { 
+                    if (other.id < it->id || other.pos < -280.0f || distToOther < 38.0f) blocked = true;
+                }
+            }
+        }
+        
+        if (!blocked) it->progress += stepSize;
