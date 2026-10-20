@@ -187,3 +187,66 @@ float getSpeedMultiplier(int myLaneIndex, int myId, TurnType myTurn, float myPos
 
 
         // Failsafe 2: Look ahead to yield
+for (float step = 10.0f; step <= 80.0f; step += 10.0f) {
+            Vector2 futureP = computeVehiclePosition(myLaneIndex, myTurn, myPos - step, center);
+            if (hypot(futureP.x - otherP.x, futureP.y - otherP.y) < 45.0f) {
+                if (other.laneIndex == myLaneIndex) {
+                    if (other.pos < myPos) return 0.0f; 
+                } else {
+                    if (other.id < myId) return 0.0f; 
+                }
+            }
+        }
+    }
+    return 1.0f; 
+}
+
+class TrafficLane {
+private: LightState currentState; int boxX, boxY; Vector2 center;
+public:
+    Queue* vehicleQueue; std::vector<ExitingVehicle> exitingVehicles; std::map<int, TurnType> vehicleTurns; std::vector<UTurningVehicle> activeUTurns;
+    TrafficLane(int lightX, int lightY, Vector2 c) { vehicleQueue = createQueue(); currentState = RED_STATE; boxX = lightX; boxY = lightY; center = c; }
+    ~TrafficLane() { destroyQueue(vehicleQueue); }
+    void addVehicle(int id, bool isEmergency, bool isReckless, int targetDest, TurnType turn, float startPos) { enqueue(vehicleQueue, id, isEmergency ? 1 : 0, isReckless, targetDest, startPos); vehicleTurns[id] = turn; }
+    void getAllCarRects(int laneIdx, std::vector<CarRect>& rects) const {
+        for (Vehicle* cur = vehicleQueue->front; cur; cur = cur->next) { Vector2 p = computeVehiclePosition(laneIdx, vehicleTurns.count(cur->id) ? vehicleTurns.at(cur->id) : STRAIGHT, cur->pos, center); rects.push_back({ cur->id, laneIdx, cur->isReckless, cur->pos, { p.x - 20.0f, p.y - 20.0f, 40.0f, 40.0f } }); }
+        for (const auto& ev : exitingVehicles) { Vector2 p = computeVehiclePosition(laneIdx, ev.turn, ev.pos, center); rects.push_back({ ev.id, laneIdx, ev.isReckless, ev.pos, { p.x - 20.0f, p.y - 20.0f, 40.0f, 40.0f } }); }
+        for (const auto& ut : activeUTurns) { float t = ut.progress, u = 1.0f - t; Vector2 p = { u*u*u*ut.p0.x + 3*u*u*t*ut.p1.x + 3*u*t*t*ut.p2.x + t*t*t*ut.p3.x, u*u*u*ut.p0.y + 3*u*u*t*ut.p1.y + 3*u*t*t*ut.p2.y + t*t*t*ut.p3.y }; rects.push_back({ ut.id, laneIdx, ut.isReckless, 9999.0f, { p.x - 20.0f, p.y - 20.0f, 40.0f, 40.0f } }); }
+    }
+    
+    // Explicitly implemented to clear crashed vehicles out of lane memory
+    void removeCrashedVehicles(const std::vector<int>& crashedIDs) {
+        for (auto it = exitingVehicles.begin(); it != exitingVehicles.end(); ) { if (find(crashedIDs.begin(), crashedIDs.end(), it->id) != crashedIDs.end()) it = exitingVehicles.erase(it); else ++it; }
+        for (auto it = activeUTurns.begin(); it != activeUTurns.end(); ) { if (find(crashedIDs.begin(), crashedIDs.end(), it->id) != crashedIDs.end()) it = activeUTurns.erase(it); else ++it; }
+        for (int id : crashedIDs) { removeVehicleById(vehicleQueue, id); vehicleTurns.erase(id); }
+    }
+    
+    void updateAnimations(int currentIntId, int laneIndex, const std::vector<CarRect>& allCars, Intersection* neighbors[4], const std::vector<CrashEvent>& crashes, Intersection* allGrid[6]);
+    void setState(LightState state) { currentState = state; } LightState getState() const { return currentState; }
+    int getQueueSize() const { return vehicleQueue->totalCount; } int getEmergencyCount() const { return vehicleQueue->emergencyCount; }
+    void drawCars(int laneIndex) {
+        for (Vehicle* cur = vehicleQueue->front; cur; cur = cur->next) { Vector2 p = computeVehiclePosition(laneIndex, vehicleTurns.count(cur->id) ? vehicleTurns.at(cur->id) : STRAIGHT, cur->pos, center); DrawRectangle(p.x - 20, p.y - 20, 40, 40, cur->isEmergency ? RED : BLUE); DrawRectangleLines(p.x - 20, p.y - 20, 40, 40, BLACK); }
+        for (const auto& ev : exitingVehicles) { Vector2 p = computeVehiclePosition(laneIndex, ev.turn, ev.pos, center); DrawRectangle(p.x - 20, p.y - 20, 40, 40, ev.isEmergency ? RED : BLUE); DrawRectangleLines(p.x - 20, p.y - 20, 40, 40, BLACK); }
+        for (const auto& ut : activeUTurns) { float t = ut.progress, u = 1.0f - t; Vector2 p = { u*u*u*ut.p0.x + 3*u*u*t*ut.p1.x + 3*u*t*t*ut.p2.x + t*t*t*ut.p3.x, u*u*u*ut.p0.y + 3*u*u*t*ut.p1.y + 3*u*t*t*ut.p2.y + t*t*t*ut.p3.y }; DrawRectangle(p.x - 20, p.y - 20, 40, 40, ut.isEmergency ? RED : BLUE); DrawRectangleLines(p.x - 20, p.y - 20, 40, 40, BLACK); }
+    }
+    void drawLights() {
+        DrawRectangle(boxX, boxY, 46, 113, {40, 40, 40, 255}); DrawRectangleLines(boxX, boxY, 46, 113, BLACK);
+        DrawCircle(boxX + 23, boxY + 24, 13, currentState == RED_STATE ? Color{255, 40, 40, 255} : Color{100, 0, 0, 255}); DrawCircleLines(boxX + 23, boxY + 24, 13, BLACK);
+        DrawCircle(boxX + 23, boxY + 56, 13, currentState == YELLOW_STATE ? Color{255, 230, 20, 255} : Color{100, 100, 0, 255}); DrawCircleLines(boxX + 23, boxY + 56, 13, BLACK);
+        DrawCircle(boxX + 23, boxY + 88, 13, currentState == GREEN_STATE ? Color{40, 255, 40, 255} : Color{0, 100, 0, 255}); DrawCircleLines(boxX + 23, boxY + 88, 13, BLACK);
+    }
+};
+
+class Intersection {
+public:
+    int id; Vector2 center; TrafficLane* lanes[4]; Intersection* neighbors[4]; int activeLaneIndex;
+    Intersection(int intId, float cx, float cy) {
+        id = intId; center = { cx, cy }; activeLaneIndex = 0; for (int i = 0; i < 4; i++) neighbors[i] = nullptr;
+        lanes[0] = new TrafficLane(cx - 175, cy - 220, center); lanes[1] = new TrafficLane(cx + 145, cy + 145, center);
+        lanes[2] = new TrafficLane(cx + 145, cy - 220, center); lanes[3] = new TrafficLane(cx - 175, cy + 145, center);
+    }
+    ~Intersection() { for(int i = 0; i < 4; i++) delete lanes[i]; }
+    void optimizeSignal() {
+        int clockwiseOrder[4] = {0, 2, 1, 3}; std::vector<int> emergencyLanes;
+        for (int i = 0; i < 4; i++) { lanes[i]->setState(RED_STATE); if (lanes[i]->getEmergencyCount() > 0) emergencyLanes.push_back(i); }
+        if (!emergencyLanes.empty()) {
