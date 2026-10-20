@@ -123,3 +123,67 @@ int getExitDir(int laneIdx, TurnType turn) {
     if (laneIdx == 2) return turn == STRAIGHT ? 3 : turn == TURN_RIGHT ? 0 : turn == TURN_LEFT ? 1 : 2;
     return turn == STRAIGHT ? 2 : turn == TURN_RIGHT ? 1 : turn == TURN_LEFT ? 0 : 3;
 }
+int getOpposingLane(int laneIdx) { return laneIdx == 0 ? 1 : laneIdx == 1 ? 0 : laneIdx == 2 ? 3 : 2; }
+TurnType getTurnTypeForNeighbor(int laneIndex, int exitDir) {
+    if (laneIndex == 0) return exitDir == 1 ? STRAIGHT : exitDir == 3 ? TURN_RIGHT : exitDir == 2 ? TURN_LEFT : U_TURN;
+    if (laneIndex == 1) return exitDir == 0 ? STRAIGHT : exitDir == 2 ? TURN_RIGHT : exitDir == 3 ? TURN_LEFT : U_TURN;
+    if (laneIndex == 2) return exitDir == 3 ? STRAIGHT : exitDir == 0 ? TURN_RIGHT : exitDir == 1 ? TURN_LEFT : U_TURN;
+    return exitDir == 2 ? STRAIGHT : exitDir == 1 ? TURN_RIGHT : exitDir == 0 ? TURN_LEFT : U_TURN;
+}
+
+bool isPathBlockedByCrash(Vector2 startPos, Vector2 endPos, const std::vector<CrashEvent>& crashes, float radius = 55.0f) {
+    for (const auto& crash : crashes) {
+        float l2 = pow(endPos.x - startPos.x, 2) + pow(endPos.y - startPos.y, 2), dToSeg = 0.0f;
+        if (l2 == 0.0f) dToSeg = hypot(crash.pos.x - startPos.x, crash.pos.y - startPos.y);
+        else {
+            float t = max(0.0f, min(((crash.pos.x - startPos.x) * (endPos.x - startPos.x) + (crash.pos.y - startPos.y) * (endPos.y - startPos.y)) / l2, 1.0f));
+            dToSeg = hypot(crash.pos.x - (startPos.x + t * (endPos.x - startPos.x)), crash.pos.y - (startPos.y + t * (endPos.y - startPos.y)));
+        }
+        if (dToSeg < radius) return true;
+    }
+    return false;
+}
+
+bool isRouteBlocked(int laneIndex, TurnType turn, float startPos, Vector2 center, const std::vector<CrashEvent>& crashes) {
+    float endPos = max(-280.0f, startPos - 350.0f);
+    for (float pVal = startPos; pVal >= endPos; pVal -= 15.0f) {
+        Vector2 p = computeVehiclePosition(laneIndex, turn, pVal, center);
+        for (const auto& crash : crashes) if (hypot(p.x - crash.pos.x, p.y - crash.pos.y) < 55.0f) return true;
+    }
+    return false;
+}
+
+bool isOppositeLaneClearForUTurn(Vector2 destPos, const std::vector<CarRect>& allCars, int myId) {
+    for (const auto& car : allCars) {
+        if (car.id == myId) continue;
+        if (hypot((car.rect.x + 20.0f) - destPos.x, (car.rect.y + 20.0f) - destPos.y) < 65.0f) return false;
+    }
+    return true;
+}
+
+float getSpeedMultiplier(int myLaneIndex, int myId, TurnType myTurn, float myPos, const std::vector<CarRect>& allCars, Vector2 center, const std::vector<CrashEvent>& crashes) {
+    // 1. Unconditional halt for crash markers
+    for (float step = 0.0f; step <= 80.0f; step += 15.0f) {
+        Vector2 p = computeVehiclePosition(myLaneIndex, myTurn, myPos - step, center); 
+        for (const auto& crash : crashes) if (hypot(p.x - crash.pos.x, p.y - crash.pos.y) < 60.0f) return 0.0f;
+    }
+    
+    // 2. Pledge: All safe drivers swear NOT to overlap
+    Vector2 myCurP = computeVehiclePosition(myLaneIndex, myTurn, myPos, center);
+    for (const auto& other : allCars) {
+        if (other.id == myId) continue;
+        
+        Vector2 otherP = { other.rect.x + 20.0f, other.rect.y + 20.0f };
+        float curDist = hypot(myCurP.x - otherP.x, myCurP.y - otherP.y);
+        
+        // Failsafe 1: Instant halt if physically too close
+        if (curDist < 42.0f) {
+            if (other.laneIndex == myLaneIndex) {
+                if (myPos > other.pos) return 0.0f; 
+            } else {
+                if (other.id < myId) return 0.0f; 
+            }
+        }
+
+
+        // Failsafe 2: Look ahead to yield
