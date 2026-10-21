@@ -2707,3 +2707,1359 @@ void *rlGetProcAddress(const char *procName)
 int rlGetVersion(void)
 {
     int glVersion = 0;
+
+#if defined(GRAPHICS_API_OPENGL_SOFTWARE)
+    glVersion = RL_OPENGL_SOFTWARE;
+#elif defined(GRAPHICS_API_OPENGL_11)
+    glVersion = RL_OPENGL_11;
+#endif
+#if defined(GRAPHICS_API_OPENGL_21)
+    glVersion = RL_OPENGL_21;
+#elif defined(GRAPHICS_API_OPENGL_43)
+    glVersion = RL_OPENGL_43;
+#elif defined(GRAPHICS_API_OPENGL_33)
+    glVersion = RL_OPENGL_33;
+#endif
+#if defined(GRAPHICS_API_OPENGL_ES3)
+    glVersion = RL_OPENGL_ES_30;
+#elif defined(GRAPHICS_API_OPENGL_ES2)
+    glVersion = RL_OPENGL_ES_20;
+#endif
+
+    return glVersion;
+}
+
+// Set current framebuffer width
+void rlSetFramebufferWidth(int width)
+{
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    RLGL.State.framebufferWidth = width;
+#endif
+}
+
+// Set current framebuffer height
+void rlSetFramebufferHeight(int height)
+{
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    RLGL.State.framebufferHeight = height;
+#endif
+}
+
+// Get default framebuffer width
+int rlGetFramebufferWidth(void)
+{
+    int width = 0;
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    width = RLGL.State.framebufferWidth;
+#endif
+    return width;
+}
+
+// Get default framebuffer height
+int rlGetFramebufferHeight(void)
+{
+    int height = 0;
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    height = RLGL.State.framebufferHeight;
+#endif
+    return height;
+}
+
+// Get default internal texture (white texture)
+// NOTE: Default texture is a 1x1 pixel UNCOMPRESSED_R8G8B8A8
+unsigned int rlGetTextureIdDefault(void)
+{
+    unsigned int id = 0;
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    id = RLGL.State.defaultTextureId;
+#endif
+    return id;
+}
+
+// Get default shader id
+unsigned int rlGetShaderIdDefault(void)
+{
+    unsigned int id = 0;
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    id = RLGL.State.defaultShaderId;
+#endif
+    return id;
+}
+
+// Get default shader locs
+int *rlGetShaderLocsDefault(void)
+{
+    int *locs = NULL;
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    locs = RLGL.State.defaultShaderLocs;
+#endif
+    return locs;
+}
+
+// Render batch management
+//------------------------------------------------------------------------------------------------
+// Load render batch
+rlRenderBatch rlLoadRenderBatch(int numBuffers, int bufferElements)
+{
+    rlRenderBatch batch = { 0 };
+    if (!isGpuReady) { TRACELOG(RL_LOG_WARNING, "GL: GPU is not ready to load data, trying to load before InitWindow()?"); return batch; }
+
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    // Initialize CPU (RAM) vertex buffers (position, texcoord, color data and indexes)
+    //--------------------------------------------------------------------------------------------
+    batch.vertexBuffer = (rlVertexBuffer *)RL_CALLOC(numBuffers, sizeof(rlVertexBuffer));
+
+    for (int i = 0; i < numBuffers; i++)
+    {
+        batch.vertexBuffer[i].elementCount = bufferElements;
+
+        batch.vertexBuffer[i].vertices = (float *)RL_CALLOC(bufferElements*3*4, sizeof(float));     // 3 float by vertex, 4 vertex by quad
+        batch.vertexBuffer[i].texcoords = (float *)RL_CALLOC(bufferElements*2*4, sizeof(float));    // 2 float by texcoord, 4 texcoord by quad
+        batch.vertexBuffer[i].normals = (float *)RL_CALLOC(bufferElements*3*4, sizeof(float));      // 3 float by vertex, 4 vertex by quad
+        batch.vertexBuffer[i].colors = (unsigned char *)RL_CALLOC(bufferElements*4*4, sizeof(unsigned char));   // 4 float by color, 4 colors by quad
+#if defined(GRAPHICS_API_OPENGL_33)
+        batch.vertexBuffer[i].indices = (unsigned int *)RL_CALLOC(bufferElements*6, sizeof(unsigned int));      // 6 int by quad (indices)
+#endif
+#if defined(GRAPHICS_API_OPENGL_ES2)
+        batch.vertexBuffer[i].indices = (unsigned short *)RL_CALLOC(bufferElements*6, sizeof(unsigned short));  // 6 int by quad (indices)
+#endif
+
+        for (int j = 0; j < (3*4*bufferElements); j++) batch.vertexBuffer[i].vertices[j] = 0.0f;
+        for (int j = 0; j < (2*4*bufferElements); j++) batch.vertexBuffer[i].texcoords[j] = 0.0f;
+        for (int j = 0; j < (3*4*bufferElements); j++) batch.vertexBuffer[i].normals[j] = 0.0f;
+        for (int j = 0; j < (4*4*bufferElements); j++) batch.vertexBuffer[i].colors[j] = 0;
+
+        int k = 0;
+
+        // Indices can be initialized right now
+        for (int j = 0; j < (6*bufferElements); j += 6)
+        {
+            batch.vertexBuffer[i].indices[j] = 4*k;
+            batch.vertexBuffer[i].indices[j + 1] = 4*k + 1;
+            batch.vertexBuffer[i].indices[j + 2] = 4*k + 2;
+            batch.vertexBuffer[i].indices[j + 3] = 4*k;
+            batch.vertexBuffer[i].indices[j + 4] = 4*k + 2;
+            batch.vertexBuffer[i].indices[j + 5] = 4*k + 3;
+
+            k++;
+        }
+
+        RLGL.State.vertexCounter = 0;
+    }
+
+    TRACELOG(RL_LOG_INFO, "RLGL: Render batch vertex buffers loaded successfully in RAM (CPU)");
+    //--------------------------------------------------------------------------------------------
+
+    // Upload to GPU (VRAM) vertex data and initialize VAOs/VBOs
+    //--------------------------------------------------------------------------------------------
+    for (int i = 0; i < numBuffers; i++)
+    {
+        if (RLGL.ExtSupported.vao)
+        {
+            // Initialize Quads VAO
+            glGenVertexArrays(1, &batch.vertexBuffer[i].vaoId);
+            glBindVertexArray(batch.vertexBuffer[i].vaoId);
+        }
+
+        // Quads - Vertex buffers binding and attributes enable
+        // Vertex position buffer (shader-location = 0)
+        glGenBuffers(1, &batch.vertexBuffer[i].vboId[0]);
+        glBindBuffer(GL_ARRAY_BUFFER, batch.vertexBuffer[i].vboId[0]);
+        glBufferData(GL_ARRAY_BUFFER, bufferElements*3*4*sizeof(float), batch.vertexBuffer[i].vertices, GL_DYNAMIC_DRAW);
+        glEnableVertexAttribArray(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_POSITION]);
+        glVertexAttribPointer(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_POSITION], 3, GL_FLOAT, 0, 0, 0);
+
+        // Vertex texcoord buffer (shader-location = 1)
+        glGenBuffers(1, &batch.vertexBuffer[i].vboId[1]);
+        glBindBuffer(GL_ARRAY_BUFFER, batch.vertexBuffer[i].vboId[1]);
+        glBufferData(GL_ARRAY_BUFFER, bufferElements*2*4*sizeof(float), batch.vertexBuffer[i].texcoords, GL_DYNAMIC_DRAW);
+        glEnableVertexAttribArray(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_TEXCOORD01]);
+        glVertexAttribPointer(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_TEXCOORD01], 2, GL_FLOAT, 0, 0, 0);
+
+        // Vertex normal buffer (shader-location = 2)
+        glGenBuffers(1, &batch.vertexBuffer[i].vboId[2]);
+        glBindBuffer(GL_ARRAY_BUFFER, batch.vertexBuffer[i].vboId[2]);
+        glBufferData(GL_ARRAY_BUFFER, bufferElements*3*4*sizeof(float), batch.vertexBuffer[i].normals, GL_DYNAMIC_DRAW);
+        glEnableVertexAttribArray(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_NORMAL]);
+        glVertexAttribPointer(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_NORMAL], 3, GL_FLOAT, 0, 0, 0);
+
+        // Vertex color buffer (shader-location = 3)
+        glGenBuffers(1, &batch.vertexBuffer[i].vboId[3]);
+        glBindBuffer(GL_ARRAY_BUFFER, batch.vertexBuffer[i].vboId[3]);
+        glBufferData(GL_ARRAY_BUFFER, bufferElements*4*4*sizeof(unsigned char), batch.vertexBuffer[i].colors, GL_DYNAMIC_DRAW);
+        glEnableVertexAttribArray(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_COLOR]);
+        glVertexAttribPointer(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_COLOR], 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, 0);
+
+        // Fill index buffer
+        glGenBuffers(1, &batch.vertexBuffer[i].vboId[4]);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, batch.vertexBuffer[i].vboId[4]);
+#if defined(GRAPHICS_API_OPENGL_33)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, bufferElements*6*sizeof(int), batch.vertexBuffer[i].indices, GL_STATIC_DRAW);
+#endif
+#if defined(GRAPHICS_API_OPENGL_ES2)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, bufferElements*6*sizeof(short), batch.vertexBuffer[i].indices, GL_STATIC_DRAW);
+#endif
+    }
+
+    TRACELOG(RL_LOG_INFO, "RLGL: Render batch vertex buffers loaded successfully in VRAM (GPU)");
+
+    // Unbind the current VAO
+    if (RLGL.ExtSupported.vao) glBindVertexArray(0);
+    //--------------------------------------------------------------------------------------------
+
+    // Init draw calls tracking system
+    //--------------------------------------------------------------------------------------------
+    batch.draws = (rlDrawCall *)RL_CALLOC(RL_DEFAULT_BATCH_DRAWCALLS, sizeof(rlDrawCall));
+
+    for (int i = 0; i < RL_DEFAULT_BATCH_DRAWCALLS; i++)
+    {
+        batch.draws[i].mode = RL_QUADS;
+        batch.draws[i].vertexCount = 0;
+        batch.draws[i].vertexAlignment = 0;
+        //batch.draws[i].vaoId = 0;
+        //batch.draws[i].shaderId = 0;
+        batch.draws[i].textureId = RLGL.State.defaultTextureId;
+        //batch.draws[i].RLGL.State.projection = rlMatrixIdentity();
+        //batch.draws[i].RLGL.State.modelview = rlMatrixIdentity();
+    }
+
+    batch.bufferCount = numBuffers;    // Record buffer count
+    batch.drawCounter = 1;             // Reset draws counter
+    batch.currentDepth = -1.0f;        // Reset depth value
+    //--------------------------------------------------------------------------------------------
+#endif
+
+    return batch;
+}
+
+// Unload default internal buffers vertex data from CPU and GPU
+void rlUnloadRenderBatch(rlRenderBatch batch)
+{
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    // Unbind everything
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+    // Unload all vertex buffers data
+    for (int i = 0; i < batch.bufferCount; i++)
+    {
+        // Unbind VAO attribs data
+        if (RLGL.ExtSupported.vao)
+        {
+            glBindVertexArray(batch.vertexBuffer[i].vaoId);
+            glDisableVertexAttribArray(RL_DEFAULT_SHADER_ATTRIB_LOCATION_POSITION);
+            glDisableVertexAttribArray(RL_DEFAULT_SHADER_ATTRIB_LOCATION_TEXCOORD);
+            glDisableVertexAttribArray(RL_DEFAULT_SHADER_ATTRIB_LOCATION_NORMAL);
+            glDisableVertexAttribArray(RL_DEFAULT_SHADER_ATTRIB_LOCATION_COLOR);
+            glBindVertexArray(0);
+        }
+
+        // Delete VBOs from GPU (VRAM)
+        glDeleteBuffers(1, &batch.vertexBuffer[i].vboId[0]);
+        glDeleteBuffers(1, &batch.vertexBuffer[i].vboId[1]);
+        glDeleteBuffers(1, &batch.vertexBuffer[i].vboId[2]);
+        glDeleteBuffers(1, &batch.vertexBuffer[i].vboId[3]);
+        glDeleteBuffers(1, &batch.vertexBuffer[i].vboId[4]);
+
+        // Delete VAOs from GPU (VRAM)
+        if (RLGL.ExtSupported.vao) glDeleteVertexArrays(1, &batch.vertexBuffer[i].vaoId);
+
+        // Free vertex arrays memory from CPU (RAM)
+        RL_FREE(batch.vertexBuffer[i].vertices);
+        RL_FREE(batch.vertexBuffer[i].texcoords);
+        RL_FREE(batch.vertexBuffer[i].normals);
+        RL_FREE(batch.vertexBuffer[i].colors);
+        RL_FREE(batch.vertexBuffer[i].indices);
+    }
+
+    // Unload arrays
+    RL_FREE(batch.vertexBuffer);
+    RL_FREE(batch.draws);
+#endif
+}
+
+// Draw render batch
+// NOTE: Batch is reseted and current buffer is updated (for multi-buffer config)
+void rlDrawRenderBatch(rlRenderBatch *batch)
+{
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    // Update batch vertex buffers
+    //------------------------------------------------------------------------------------------------------------
+    // NOTE: If there is not vertex data, buffers doesn't need to be updated (vertexCount > 0)
+    if (RLGL.State.vertexCounter > 0)
+    {
+        // Activate elements VAO
+        if (RLGL.ExtSupported.vao) glBindVertexArray(batch->vertexBuffer[batch->currentBuffer].vaoId);
+
+        // TODO: If no data changed on the CPU arrays there is no need to re-upload data to GPU,
+        // a flag can be used to detect changes but it would imply keeping a copy buffer and memcmp() both, does it worth it?
+
+        // Vertex positions buffer
+        glBindBuffer(GL_ARRAY_BUFFER, batch->vertexBuffer[batch->currentBuffer].vboId[0]);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, RLGL.State.vertexCounter*3*sizeof(float), batch->vertexBuffer[batch->currentBuffer].vertices);
+        //glBufferData(GL_ARRAY_BUFFER, sizeof(float)*3*4*batch->vertexBuffer[batch->currentBuffer].elementCount, batch->vertexBuffer[batch->currentBuffer].vertices, GL_DYNAMIC_DRAW);  // Update all buffer
+
+        // Texture coordinates buffer
+        glBindBuffer(GL_ARRAY_BUFFER, batch->vertexBuffer[batch->currentBuffer].vboId[1]);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, RLGL.State.vertexCounter*2*sizeof(float), batch->vertexBuffer[batch->currentBuffer].texcoords);
+        //glBufferData(GL_ARRAY_BUFFER, sizeof(float)*2*4*batch->vertexBuffer[batch->currentBuffer].elementCount, batch->vertexBuffer[batch->currentBuffer].texcoords, GL_DYNAMIC_DRAW); // Update all buffer
+
+        // Normals buffer
+        glBindBuffer(GL_ARRAY_BUFFER, batch->vertexBuffer[batch->currentBuffer].vboId[2]);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, RLGL.State.vertexCounter*3*sizeof(float), batch->vertexBuffer[batch->currentBuffer].normals);
+        //glBufferData(GL_ARRAY_BUFFER, sizeof(float)*3*4*batch->vertexBuffer[batch->currentBuffer].elementCount, batch->vertexBuffer[batch->currentBuffer].normals, GL_DYNAMIC_DRAW); // Update all buffer
+
+        // Colors buffer
+        glBindBuffer(GL_ARRAY_BUFFER, batch->vertexBuffer[batch->currentBuffer].vboId[3]);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, RLGL.State.vertexCounter*4*sizeof(unsigned char), batch->vertexBuffer[batch->currentBuffer].colors);
+        //glBufferData(GL_ARRAY_BUFFER, sizeof(float)*4*4*batch->vertexBuffer[batch->currentBuffer].elementCount, batch->vertexBuffer[batch->currentBuffer].colors, GL_DYNAMIC_DRAW);    // Update all buffer
+
+        // NOTE: glMapBuffer() causes sync issue
+        // If GPU is working with this buffer, glMapBuffer() will wait(stall) until GPU to finish its job
+        // To avoid waiting (idle), glBufferData() can bee called first with NULL pointer before glMapBuffer()
+        // Doing that, the previous data in PBO will be discarded and glMapBuffer() returns a new
+        // allocated pointer immediately even if GPU is still working with the previous data
+
+        // Another option: map the buffer object into client's memory
+        //batch->vertexBuffer[batch->currentBuffer].vertices = (float *)glMapBuffer(GL_ARRAY_BUFFER, GL_READ_WRITE);
+        //if (batch->vertexBuffer[batch->currentBuffer].vertices)
+        //{
+        //    Update vertex data
+        //}
+        //glUnmapBuffer(GL_ARRAY_BUFFER);
+
+        // Unbind the current VAO
+        if (RLGL.ExtSupported.vao) glBindVertexArray(0);
+    }
+    //------------------------------------------------------------------------------------------------------------
+
+    // Draw batch vertex buffers (considering VR stereo if required)
+    //------------------------------------------------------------------------------------------------------------
+    Matrix matProjection = RLGL.State.projection;
+    Matrix matModelView = RLGL.State.modelview;
+
+    int eyeCount = 1;
+    if (RLGL.State.stereoRender) eyeCount = 2;
+
+    for (int eye = 0; eye < eyeCount; eye++)
+    {
+        if (eyeCount == 2)
+        {
+            // Setup current eye viewport (half screen width)
+            rlViewport(eye*RLGL.State.framebufferWidth/2, 0, RLGL.State.framebufferWidth/2, RLGL.State.framebufferHeight);
+
+            // Set current eye view offset to modelview matrix
+            rlSetMatrixModelview(rlMatrixMultiply(matModelView, RLGL.State.viewOffsetStereo[eye]));
+            // Set current eye projection matrix
+            rlSetMatrixProjection(RLGL.State.projectionStereo[eye]);
+        }
+
+        // Draw buffers
+        if (RLGL.State.vertexCounter > 0)
+        {
+            // Set current shader and upload current MVP matrix
+            glUseProgram(RLGL.State.currentShaderId);
+
+            // Create modelview-projection matrix and upload to shader
+            Matrix matMVP = rlMatrixMultiply(RLGL.State.modelview, RLGL.State.projection);
+            glUniformMatrix4fv(RLGL.State.currentShaderLocs[RL_SHADER_LOC_MATRIX_MVP], 1, false, rlMatrixToFloat(matMVP));
+
+            if (RLGL.State.currentShaderLocs[RL_SHADER_LOC_MATRIX_PROJECTION] != -1)
+            {
+                glUniformMatrix4fv(RLGL.State.currentShaderLocs[RL_SHADER_LOC_MATRIX_PROJECTION], 1, false, rlMatrixToFloat(RLGL.State.projection));
+            }
+
+            // WARNING: For the following setup of the view, model, and normal matrices, it is expected that
+            // transformations and rendering occur between rlPushMatrix() and rlPopMatrix()
+
+            if (RLGL.State.currentShaderLocs[RL_SHADER_LOC_MATRIX_VIEW] != -1)
+            {
+                glUniformMatrix4fv(RLGL.State.currentShaderLocs[RL_SHADER_LOC_MATRIX_VIEW], 1, false, rlMatrixToFloat(RLGL.State.modelview));
+            }
+
+            if (RLGL.State.currentShaderLocs[RL_SHADER_LOC_MATRIX_MODEL] != -1)
+            {
+                glUniformMatrix4fv(RLGL.State.currentShaderLocs[RL_SHADER_LOC_MATRIX_MODEL], 1, false, rlMatrixToFloat(RLGL.State.transform));
+            }
+
+            if (RLGL.State.currentShaderLocs[RL_SHADER_LOC_MATRIX_NORMAL] != -1)
+            {
+                glUniformMatrix4fv(RLGL.State.currentShaderLocs[RL_SHADER_LOC_MATRIX_NORMAL], 1, false, rlMatrixToFloat(rlMatrixTranspose(rlMatrixInvert(RLGL.State.transform))));
+            }
+
+            if (RLGL.ExtSupported.vao) glBindVertexArray(batch->vertexBuffer[batch->currentBuffer].vaoId);
+            else
+            {
+                // Bind vertex attrib: position (shader-location = 0)
+                glBindBuffer(GL_ARRAY_BUFFER, batch->vertexBuffer[batch->currentBuffer].vboId[0]);
+                glVertexAttribPointer(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_POSITION], 3, GL_FLOAT, 0, 0, 0);
+                glEnableVertexAttribArray(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_POSITION]);
+
+                // Bind vertex attrib: texcoord (shader-location = 1)
+                glBindBuffer(GL_ARRAY_BUFFER, batch->vertexBuffer[batch->currentBuffer].vboId[1]);
+                glVertexAttribPointer(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_TEXCOORD01], 2, GL_FLOAT, 0, 0, 0);
+                glEnableVertexAttribArray(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_TEXCOORD01]);
+
+                // Bind vertex attrib: normal (shader-location = 2)
+                glBindBuffer(GL_ARRAY_BUFFER, batch->vertexBuffer[batch->currentBuffer].vboId[2]);
+                glVertexAttribPointer(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_NORMAL], 3, GL_FLOAT, 0, 0, 0);
+                glEnableVertexAttribArray(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_NORMAL]);
+
+                // Bind vertex attrib: color (shader-location = 3)
+                glBindBuffer(GL_ARRAY_BUFFER, batch->vertexBuffer[batch->currentBuffer].vboId[3]);
+                glVertexAttribPointer(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_COLOR], 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, 0);
+                glEnableVertexAttribArray(RLGL.State.currentShaderLocs[RL_SHADER_LOC_VERTEX_COLOR]);
+
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, batch->vertexBuffer[batch->currentBuffer].vboId[4]);
+            }
+
+            // Setup some default shader values
+            glUniform4f(RLGL.State.currentShaderLocs[RL_SHADER_LOC_COLOR_DIFFUSE], 1.0f, 1.0f, 1.0f, 1.0f);
+            glUniform1i(RLGL.State.currentShaderLocs[RL_SHADER_LOC_MAP_DIFFUSE], 0);  // Active default sampler2D: texture0
+
+            // Activate additional sampler textures
+            // Those additional textures will be common for all draw calls of the batch
+            for (int i = 0; i < RL_DEFAULT_BATCH_MAX_TEXTURE_UNITS; i++)
+            {
+                if (RLGL.State.activeTextureId[i] > 0)
+                {
+                    glActiveTexture(GL_TEXTURE0 + 1 + i);
+                    glBindTexture(GL_TEXTURE_2D, RLGL.State.activeTextureId[i]);
+                }
+            }
+
+            // Activate default sampler2D texture0 (one texture is always active for default batch shader)
+            // NOTE: Batch system accumulates calls by texture0 changes, additional textures are enabled for all the draw calls
+            glActiveTexture(GL_TEXTURE0);
+
+            for (int i = 0, vertexOffset = 0; i < batch->drawCounter; i++)
+            {
+                // Bind current draw call texture, activated as GL_TEXTURE0 and bound to sampler2D texture0 by default
+                glBindTexture(GL_TEXTURE_2D, batch->draws[i].textureId);
+
+                if ((batch->draws[i].mode == RL_LINES) || (batch->draws[i].mode == RL_TRIANGLES)) glDrawArrays(batch->draws[i].mode, vertexOffset, batch->draws[i].vertexCount);
+                else
+                {
+    #if defined(GRAPHICS_API_OPENGL_33)
+                    // The number of indices to be processed needs to be defined: elementCount*6
+                    // NOTE: The final parameter tells the GPU the offset in bytes from the
+                    // start of the index buffer to the location of the first index to process
+                    glDrawElements(GL_TRIANGLES, batch->draws[i].vertexCount/4*6, GL_UNSIGNED_INT, (GLvoid *)(vertexOffset/4*6*sizeof(GLuint)));
+    #endif
+    #if defined(GRAPHICS_API_OPENGL_ES2)
+                    glDrawElements(GL_TRIANGLES, batch->draws[i].vertexCount/4*6, GL_UNSIGNED_SHORT, (GLvoid *)(vertexOffset/4*6*sizeof(GLushort)));
+    #endif
+                }
+
+                vertexOffset += (batch->draws[i].vertexCount + batch->draws[i].vertexAlignment);
+            }
+
+            if (!RLGL.ExtSupported.vao)
+            {
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+            }
+
+            glBindTexture(GL_TEXTURE_2D, 0);    // Unbind textures
+        }
+
+        if (RLGL.ExtSupported.vao) glBindVertexArray(0); // Unbind VAO
+
+        glUseProgram(0);    // Unbind shader program
+    }
+
+    // Restore viewport to default measures
+    if (eyeCount == 2) rlViewport(0, 0, RLGL.State.framebufferWidth, RLGL.State.framebufferHeight);
+    //------------------------------------------------------------------------------------------------------------
+
+    // Reset batch buffers
+    //------------------------------------------------------------------------------------------------------------
+    // Reset vertex counter for next frame
+    RLGL.State.vertexCounter = 0;
+
+    // Reset depth for next draw
+    batch->currentDepth = -1.0f;
+
+    // Restore projection/modelview matrices
+    RLGL.State.projection = matProjection;
+    RLGL.State.modelview = matModelView;
+
+    // Reset RLGL.currentBatch->draws array
+    for (int i = 0; i < RL_DEFAULT_BATCH_DRAWCALLS; i++)
+    {
+        batch->draws[i].mode = RL_QUADS;
+        batch->draws[i].vertexCount = 0;
+        batch->draws[i].textureId = RLGL.State.defaultTextureId;
+    }
+
+    // Reset active texture units for next batch
+    for (int i = 0; i < RL_DEFAULT_BATCH_MAX_TEXTURE_UNITS; i++) RLGL.State.activeTextureId[i] = 0;
+
+    // Reset draws counter to one draw for the batch
+    batch->drawCounter = 1;
+    //------------------------------------------------------------------------------------------------------------
+
+    // Change to next buffer in the list (in case of multi-buffering)
+    batch->currentBuffer++;
+    if (batch->currentBuffer >= batch->bufferCount) batch->currentBuffer = 0;
+#endif
+}
+
+// Set the active render batch for rlgl
+void rlSetRenderBatchActive(rlRenderBatch *batch)
+{
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    rlDrawRenderBatch(RLGL.currentBatch);
+
+    if (batch != NULL) RLGL.currentBatch = batch;
+    else RLGL.currentBatch = &RLGL.defaultBatch;
+#endif
+}
+
+// Update and draw internal render batch
+void rlDrawRenderBatchActive(void)
+{
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    rlDrawRenderBatch(RLGL.currentBatch);    // NOTE: Stereo rendering is checked inside
+#endif
+}
+
+// Check internal buffer overflow for a given number of vertex
+// and force a rlRenderBatch draw call if required
+bool rlCheckRenderBatchLimit(int vCount)
+{
+    bool overflow = false;
+
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    if ((RLGL.State.vertexCounter + vCount) >=
+        (RLGL.currentBatch->vertexBuffer[RLGL.currentBatch->currentBuffer].elementCount*4))
+    {
+        overflow = true;
+
+        // Store current primitive drawing mode and texture id
+        int currentMode = RLGL.currentBatch->draws[RLGL.currentBatch->drawCounter - 1].mode;
+        int currentTexture = RLGL.currentBatch->draws[RLGL.currentBatch->drawCounter - 1].textureId;
+
+        rlDrawRenderBatch(RLGL.currentBatch);    // NOTE: Stereo rendering is checked inside
+
+        // Restore state of last batch so new vertices can be added
+        RLGL.currentBatch->draws[RLGL.currentBatch->drawCounter - 1].mode = currentMode;
+        RLGL.currentBatch->draws[RLGL.currentBatch->drawCounter - 1].textureId = currentTexture;
+    }
+#endif
+
+    return overflow;
+}
+
+// Textures data management
+//-----------------------------------------------------------------------------------------
+// Convert image data to OpenGL texture (returns OpenGL valid Id)
+unsigned int rlLoadTexture(const void *data, int width, int height, int format, int mipmapCount)
+{
+    unsigned int id = 0;
+    if (!isGpuReady) { TRACELOG(RL_LOG_WARNING, "GL: GPU is not ready to load data, trying to load before InitWindow()?"); return id; }
+
+    glBindTexture(GL_TEXTURE_2D, 0);    // Free any old binding
+
+    // Check texture format support by OpenGL 1.1 (compressed textures not supported)
+#if defined(GRAPHICS_API_OPENGL_11)
+    if (format >= RL_PIXELFORMAT_COMPRESSED_DXT1_RGB)
+    {
+        // TODO: Support texture data decompression
+        TRACELOG(RL_LOG_WARNING, "GL: OpenGL 1.1 does not support GPU compressed texture formats");
+        return id;
+    }
+#else
+    if ((!RLGL.ExtSupported.texCompDXT) && ((format == RL_PIXELFORMAT_COMPRESSED_DXT1_RGB) || (format == RL_PIXELFORMAT_COMPRESSED_DXT1_RGBA) ||
+        (format == RL_PIXELFORMAT_COMPRESSED_DXT3_RGBA) || (format == RL_PIXELFORMAT_COMPRESSED_DXT5_RGBA)))
+    {
+        TRACELOG(RL_LOG_WARNING, "GL: DXT compressed texture format not supported");
+        return id;
+    }
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    if ((!RLGL.ExtSupported.texCompETC1) && (format == RL_PIXELFORMAT_COMPRESSED_ETC1_RGB))
+    {
+        TRACELOG(RL_LOG_WARNING, "GL: ETC1 compressed texture format not supported");
+        return id;
+    }
+
+    if ((!RLGL.ExtSupported.texCompETC2) && ((format == RL_PIXELFORMAT_COMPRESSED_ETC2_RGB) || (format == RL_PIXELFORMAT_COMPRESSED_ETC2_EAC_RGBA)))
+    {
+        TRACELOG(RL_LOG_WARNING, "GL: ETC2 compressed texture format not supported");
+        return id;
+    }
+
+    if ((!RLGL.ExtSupported.texCompPVRT) && ((format == RL_PIXELFORMAT_COMPRESSED_PVRT_RGB) || (format == RL_PIXELFORMAT_COMPRESSED_PVRT_RGBA)))
+    {
+        TRACELOG(RL_LOG_WARNING, "GL: PVRT compressed texture format not supported");
+        return id;
+    }
+
+    if ((!RLGL.ExtSupported.texCompASTC) && ((format == RL_PIXELFORMAT_COMPRESSED_ASTC_4x4_RGBA) || (format == RL_PIXELFORMAT_COMPRESSED_ASTC_8x8_RGBA)))
+    {
+        TRACELOG(RL_LOG_WARNING, "GL: ASTC compressed texture format not supported");
+        return id;
+    }
+#endif
+#endif // GRAPHICS_API_OPENGL_11
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    glGenTextures(1, &id);              // Generate texture id
+
+    glBindTexture(GL_TEXTURE_2D, id);
+
+    int mipWidth = width;
+    int mipHeight = height;
+    int mipOffset = 0;          // Mipmap data offset, only used for tracelog
+    (void)mipOffset;            // Used to avoid gcc warnings about unused variable
+
+    // NOTE: Added pointer math separately from function to avoid UBSAN complaining
+    unsigned char *dataPtr = NULL;
+    if (data != NULL) dataPtr = (unsigned char *)data;
+
+    // Load the different mipmap levels
+    for (int i = 0; i < mipmapCount; i++)
+    {
+        unsigned int mipSize = rlGetPixelDataSize(mipWidth, mipHeight, format);
+
+        unsigned int glInternalFormat, glFormat, glType;
+        rlGetGlTextureFormats(format, &glInternalFormat, &glFormat, &glType);
+
+        TRACELOG(RL_LOG_DEBUG, "TEXTURE: Load mipmap level %i (%i x %i), size: %i, offset: %i", i, mipWidth, mipHeight, mipSize, mipOffset);
+
+        if (glInternalFormat != 0)
+        {
+            if (format < RL_PIXELFORMAT_COMPRESSED_DXT1_RGB) glTexImage2D(GL_TEXTURE_2D, i, glInternalFormat, mipWidth, mipHeight, 0, glFormat, glType, dataPtr);
+#if !defined(GRAPHICS_API_OPENGL_11)
+            else glCompressedTexImage2D(GL_TEXTURE_2D, i, glInternalFormat, mipWidth, mipHeight, 0, mipSize, dataPtr);
+#endif
+
+#if defined(GRAPHICS_API_OPENGL_33)
+            if (format == RL_PIXELFORMAT_UNCOMPRESSED_GRAYSCALE)
+            {
+                GLint swizzleMask[] = { GL_RED, GL_RED, GL_RED, GL_ONE };
+                glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
+            }
+            else if (format == RL_PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA)
+            {
+#if defined(GRAPHICS_API_OPENGL_21)
+                GLint swizzleMask[] = { GL_RED, GL_RED, GL_RED, GL_ALPHA };
+#elif defined(GRAPHICS_API_OPENGL_33)
+                GLint swizzleMask[] = { GL_RED, GL_RED, GL_RED, GL_GREEN };
+#endif
+                glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
+            }
+#endif
+        }
+
+        mipWidth /= 2;
+        mipHeight /= 2;
+        mipOffset += mipSize; // Increment offset position to next mipmap
+        if (data != NULL) dataPtr += mipSize; // Increment data pointer to next mipmap
+
+        // Security check for NPOT textures
+        if (mipWidth < 1) mipWidth = 1;
+        if (mipHeight < 1) mipHeight = 1;
+    }
+
+    // Texture parameters configuration
+    // NOTE: glTexParameteri does NOT affect texture uploading
+#if defined(GRAPHICS_API_OPENGL_ES2)
+    // NOTE: OpenGL ES 2.0 with no GL_OES_texture_npot support (i.e. WebGL) has limited NPOT support, so CLAMP_TO_EDGE must be used
+    if (RLGL.ExtSupported.texNPOT)
+    {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);       // Set texture to repeat on x-axis
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);       // Set texture to repeat on y-axis
+    }
+    else
+    {
+        // NOTE: If using negative texture coordinates (LoadOBJ()), it does not work!
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);       // Set texture to clamp on x-axis
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);       // Set texture to clamp on y-axis
+    }
+#else
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);       // Set texture to repeat on x-axis
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);       // Set texture to repeat on y-axis
+#endif
+
+    // Magnification and minification filters
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);  // Alternative: GL_LINEAR
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);  // Alternative: GL_LINEAR
+
+#if defined(GRAPHICS_API_OPENGL_33)
+    if (mipmapCount > 1)
+    {
+        // Activate trilinear filtering if mipmaps are available
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+
+        // Define the maximum number of mipmap levels to be used, 0 is base texture size
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, mipmapCount - 1);
+
+        // Check if the loaded texture with mipmaps is complete,
+        // uncomplete textures will draw in black if mipmap filtering is required
+        //GLint complete = 0;
+        //glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_IMMUTABLE_FORMAT, &complete);
+    }
+#endif
+
+    // At this point texture is loaded in GPU and texture parameters configured
+
+    // NOTE: If mipmaps were not in data, they are not generated automatically
+
+    // Unbind current texture
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    if (id > 0) TRACELOG(RL_LOG_INFO, "TEXTURE: [ID %i] Texture loaded successfully (%ix%i | %s | %i mipmaps)", id, width, height, rlGetPixelFormatName(format), mipmapCount);
+    else TRACELOG(RL_LOG_WARNING, "TEXTURE: Failed to load texture");
+
+    return id;
+}
+
+// Load depth texture/renderbuffer (to be attached to fbo)
+// WARNING: OpenGL ES 2.0 requires GL_OES_depth_texture and WebGL requires WEBGL_depth_texture extensions
+unsigned int rlLoadTextureDepth(int width, int height, bool useRenderBuffer)
+{
+    unsigned int id = 0;
+    if (!isGpuReady) { TRACELOG(RL_LOG_WARNING, "GL: GPU is not ready to load data, trying to load before InitWindow()?"); return id; }
+
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    // In case depth textures were not supported, force renderbuffer usage
+    if (!RLGL.ExtSupported.texDepth) useRenderBuffer = true;
+
+    // NOTE: Letting the implementation to choose the best bit-depth
+    // Possible formats: GL_DEPTH_COMPONENT16, GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT32 and GL_DEPTH_COMPONENT32F
+    unsigned int glInternalFormat = GL_DEPTH_COMPONENT;
+
+#if defined(GRAPHICS_API_OPENGL_ES2)
+    // WARNING: WebGL platform requires unsized internal format definition (GL_DEPTH_COMPONENT)
+    // while other platforms using OpenGL ES 2.0 require/support sized internal formats depending on the GPU capabilities
+    if (!RLGL.ExtSupported.texDepthWebGL || useRenderBuffer)
+    {
+        if (RLGL.ExtSupported.maxDepthBits == 32) glInternalFormat = GL_DEPTH_COMPONENT32_OES;
+        else if (RLGL.ExtSupported.maxDepthBits == 24) glInternalFormat = GL_DEPTH_COMPONENT24_OES;
+        else glInternalFormat = GL_DEPTH_COMPONENT16;
+    }
+#endif
+#if defined(GRAPHICS_API_OPENGL_ES3)
+    // NOTE: This sized internal format should also work for WebGL 2.0
+    // WARNING: Specification only allows GL_DEPTH_COMPONENT32F for GL_FLOAT type
+    // REF: https://registry.khronos.org/OpenGL-Refpages/es3.0/html/glTexImage2D.xhtml
+    if (RLGL.ExtSupported.maxDepthBits == 24) glInternalFormat = GL_DEPTH_COMPONENT24;
+    else glInternalFormat = GL_DEPTH_COMPONENT16;
+#endif
+
+    if (!useRenderBuffer && RLGL.ExtSupported.texDepth)
+    {
+        glGenTextures(1, &id);
+        glBindTexture(GL_TEXTURE_2D, id);
+        glTexImage2D(GL_TEXTURE_2D, 0, glInternalFormat, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        TRACELOG(RL_LOG_INFO, "TEXTURE: Depth texture loaded successfully");
+    }
+    else
+    {
+        // Create the renderbuffer that will serve as the depth attachment for the framebuffer
+        // NOTE: A renderbuffer is simpler than a texture and could offer better performance on embedded devices
+        glGenRenderbuffers(1, &id);
+        glBindRenderbuffer(GL_RENDERBUFFER, id);
+        glRenderbufferStorage(GL_RENDERBUFFER, glInternalFormat, width, height);
+
+        glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+        TRACELOG(RL_LOG_INFO, "TEXTURE: [ID %i] Depth renderbuffer loaded successfully (%i bits)", id, (RLGL.ExtSupported.maxDepthBits >= 24)? RLGL.ExtSupported.maxDepthBits : 16);
+    }
+#elif defined(GRAPHICS_API_OPENGL_SOFTWARE)
+    // NOTE: Renderbuffers are the same type of object as textures in rlsw
+    // WARNING: Ensure that the depth format is the one specified at rlsw compilation
+    glGenRenderbuffers(1, &id);
+    glBindRenderbuffer(GL_RENDERBUFFER, id);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT32, width, height);
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+#endif
+
+    return id;
+}
+
+// Load texture cubemap
+// NOTE: Cubemap data is expected to be 6 images in a single data array (one after the other),
+// expected the following convention: +X, -X, +Y, -Y, +Z, -Z
+unsigned int rlLoadTextureCubemap(const void *data, int size, int format, int mipmapCount)
+{
+    unsigned int id = 0;
+    if (!isGpuReady) { TRACELOG(RL_LOG_WARNING, "GL: GPU is not ready to load data, trying to load before InitWindow()?"); return id; }
+
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    int mipSize = size;
+
+    // NOTE: Added pointer math separately from function to avoid UBSAN complaining
+    unsigned char *dataPtr = NULL;
+    if (data != NULL) dataPtr = (unsigned char *)data;
+
+    unsigned int dataSize = rlGetPixelDataSize(size, size, format);
+
+    glGenTextures(1, &id);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, id);
+
+    unsigned int glInternalFormat, glFormat, glType;
+    rlGetGlTextureFormats(format, &glInternalFormat, &glFormat, &glType);
+
+    if (glInternalFormat != 0)
+    {
+        // Load cubemap faces/mipmaps
+        for (int i = 0; i < 6*mipmapCount; i++)
+        {
+            int mipmapLevel = i/6;
+            int face = i%6;
+
+            if (data == NULL)
+            {
+                if (format < RL_PIXELFORMAT_COMPRESSED_DXT1_RGB)
+                {
+                    if ((format == RL_PIXELFORMAT_UNCOMPRESSED_R32) ||
+                        (format == RL_PIXELFORMAT_UNCOMPRESSED_R32G32B32A32) ||
+                        (format == RL_PIXELFORMAT_UNCOMPRESSED_R16) ||
+                        (format == RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16A16)) TRACELOG(RL_LOG_WARNING, "TEXTURES: Cubemap requested format not supported");
+                    else glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, mipmapLevel, glInternalFormat, mipSize, mipSize, 0, glFormat, glType, NULL);
+                }
+                else TRACELOG(RL_LOG_WARNING, "TEXTURES: Empty cubemap creation does not support compressed format");
+            }
+            else
+            {
+                if (format < RL_PIXELFORMAT_COMPRESSED_DXT1_RGB) glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, mipmapLevel, glInternalFormat, mipSize, mipSize, 0, glFormat, glType, (unsigned char *)dataPtr + face*dataSize);
+                else glCompressedTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, mipmapLevel, glInternalFormat, mipSize, mipSize, 0, dataSize, (unsigned char *)dataPtr + face*dataSize);
+            }
+
+#if defined(GRAPHICS_API_OPENGL_33)
+            if (format == RL_PIXELFORMAT_UNCOMPRESSED_GRAYSCALE)
+            {
+                GLint swizzleMask[] = { GL_RED, GL_RED, GL_RED, GL_ONE };
+                glTexParameteriv(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
+            }
+            else if (format == RL_PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA)
+            {
+#if defined(GRAPHICS_API_OPENGL_21)
+                GLint swizzleMask[] = { GL_RED, GL_RED, GL_RED, GL_ALPHA };
+#elif defined(GRAPHICS_API_OPENGL_33)
+                GLint swizzleMask[] = { GL_RED, GL_RED, GL_RED, GL_GREEN };
+#endif
+                glTexParameteriv(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
+            }
+#endif
+            if (face == 5)
+            {
+                mipSize /= 2;
+                if (data != NULL) dataPtr += dataSize*6; // Increment data pointer to next mipmap
+
+                // Security check for NPOT textures
+                if (mipSize < 1) mipSize = 1;
+
+                dataSize = rlGetPixelDataSize(mipSize, mipSize, format);
+            }
+        }
+    }
+
+    // Set cubemap texture sampling parameters
+    if (mipmapCount > 1) glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    else glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+#if defined(GRAPHICS_API_OPENGL_33)
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);  // Flag not supported on OpenGL ES 2.0
+#endif
+
+    glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+#endif
+
+    if (id > 0) TRACELOG(RL_LOG_INFO, "TEXTURE: [ID %i] Cubemap texture loaded successfully (%ix%i)", id, size, size);
+    else TRACELOG(RL_LOG_WARNING, "TEXTURE: Failed to load cubemap texture");
+
+    return id;
+}
+
+// Update already loaded texture in GPU with new data
+// WARNING: Not possible to know safely if internal texture format is the expected one...
+void rlUpdateTexture(unsigned int id, int offsetX, int offsetY, int width, int height, int format, const void *data)
+{
+    glBindTexture(GL_TEXTURE_2D, id);
+
+    unsigned int glInternalFormat, glFormat, glType;
+    rlGetGlTextureFormats(format, &glInternalFormat, &glFormat, &glType);
+
+    if ((glInternalFormat != 0) && (format < RL_PIXELFORMAT_COMPRESSED_DXT1_RGB))
+    {
+        glTexSubImage2D(GL_TEXTURE_2D, 0, offsetX, offsetY, width, height, glFormat, glType, data);
+    }
+    else TRACELOG(RL_LOG_WARNING, "TEXTURE: [ID %i] Failed to update for current texture format (%i)", id, format);
+}
+
+// Get OpenGL internal formats and data type from raylib PixelFormat
+void rlGetGlTextureFormats(int format, unsigned int *glInternalFormat, unsigned int *glFormat, unsigned int *glType)
+{
+    *glInternalFormat = 0;
+    *glFormat = 0;
+    *glType = 0;
+
+    switch (format)
+    {
+    #if defined(GRAPHICS_API_OPENGL_11) || defined(GRAPHICS_API_OPENGL_21) || defined(GRAPHICS_API_OPENGL_ES2)
+        // NOTE: on OpenGL ES 2.0 (WebGL), internalFormat must match format and options allowed are: GL_LUMINANCE, GL_RGB, GL_RGBA
+        case RL_PIXELFORMAT_UNCOMPRESSED_GRAYSCALE: *glInternalFormat = GL_LUMINANCE; *glFormat = GL_LUMINANCE; *glType = GL_UNSIGNED_BYTE; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA: *glInternalFormat = GL_LUMINANCE_ALPHA; *glFormat = GL_LUMINANCE_ALPHA; *glType = GL_UNSIGNED_BYTE; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R5G6B5: *glInternalFormat = GL_RGB; *glFormat = GL_RGB; *glType = GL_UNSIGNED_SHORT_5_6_5; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8: *glInternalFormat = GL_RGB; *glFormat = GL_RGB; *glType = GL_UNSIGNED_BYTE; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R5G5B5A1: *glInternalFormat = GL_RGBA; *glFormat = GL_RGBA; *glType = GL_UNSIGNED_SHORT_5_5_5_1; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R4G4B4A4: *glInternalFormat = GL_RGBA; *glFormat = GL_RGBA; *glType = GL_UNSIGNED_SHORT_4_4_4_4; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8A8: *glInternalFormat = GL_RGBA; *glFormat = GL_RGBA; *glType = GL_UNSIGNED_BYTE; break;
+        #if !defined(GRAPHICS_API_OPENGL_11)
+        #if defined(GRAPHICS_API_OPENGL_ES3)
+        case RL_PIXELFORMAT_UNCOMPRESSED_R32: if (RLGL.ExtSupported.texFloat32) *glInternalFormat = GL_R32F_EXT; *glFormat = GL_RED_EXT; *glType = GL_FLOAT; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R32G32B32: if (RLGL.ExtSupported.texFloat32) *glInternalFormat = GL_RGB32F_EXT; *glFormat = GL_RGB; *glType = GL_FLOAT; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R32G32B32A32: if (RLGL.ExtSupported.texFloat32) *glInternalFormat = GL_RGBA32F_EXT; *glFormat = GL_RGBA; *glType = GL_FLOAT; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R16: if (RLGL.ExtSupported.texFloat16) *glInternalFormat = GL_R16F_EXT; *glFormat = GL_RED_EXT; *glType = GL_HALF_FLOAT; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16: if (RLGL.ExtSupported.texFloat16) *glInternalFormat = GL_RGB16F_EXT; *glFormat = GL_RGB; *glType = GL_HALF_FLOAT; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16A16: if (RLGL.ExtSupported.texFloat16) *glInternalFormat = GL_RGBA16F_EXT; *glFormat = GL_RGBA; *glType = GL_HALF_FLOAT; break;
+        #else
+        case RL_PIXELFORMAT_UNCOMPRESSED_R32: if (RLGL.ExtSupported.texFloat32) *glInternalFormat = GL_LUMINANCE; *glFormat = GL_LUMINANCE; *glType = GL_FLOAT; break;            // NOTE: Requires extension OES_texture_float
+        case RL_PIXELFORMAT_UNCOMPRESSED_R32G32B32: if (RLGL.ExtSupported.texFloat32) *glInternalFormat = GL_RGB; *glFormat = GL_RGB; *glType = GL_FLOAT; break;                  // NOTE: Requires extension OES_texture_float
+        case RL_PIXELFORMAT_UNCOMPRESSED_R32G32B32A32: if (RLGL.ExtSupported.texFloat32) *glInternalFormat = GL_RGBA; *glFormat = GL_RGBA; *glType = GL_FLOAT; break;             // NOTE: Requires extension OES_texture_float
+        #if defined(GRAPHICS_API_OPENGL_21)
+        case RL_PIXELFORMAT_UNCOMPRESSED_R16: if (RLGL.ExtSupported.texFloat16) *glInternalFormat = GL_LUMINANCE; *glFormat = GL_LUMINANCE; *glType = GL_HALF_FLOAT_ARB; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16: if (RLGL.ExtSupported.texFloat16) *glInternalFormat = GL_RGB; *glFormat = GL_RGB; *glType = GL_HALF_FLOAT_ARB; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16A16: if (RLGL.ExtSupported.texFloat16) *glInternalFormat = GL_RGBA; *glFormat = GL_RGBA; *glType = GL_HALF_FLOAT_ARB; break;
+        #else // defined(GRAPHICS_API_OPENGL_ES2)
+        case RL_PIXELFORMAT_UNCOMPRESSED_R16: if (RLGL.ExtSupported.texFloat16) *glInternalFormat = GL_LUMINANCE; *glFormat = GL_LUMINANCE; *glType = GL_HALF_FLOAT_OES; break;   // NOTE: Requires extension OES_texture_half_float
+        case RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16: if (RLGL.ExtSupported.texFloat16) *glInternalFormat = GL_RGB; *glFormat = GL_RGB; *glType = GL_HALF_FLOAT_OES; break;         // NOTE: Requires extension OES_texture_half_float
+        case RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16A16: if (RLGL.ExtSupported.texFloat16) *glInternalFormat = GL_RGBA; *glFormat = GL_RGBA; *glType = GL_HALF_FLOAT_OES; break;    // NOTE: Requires extension OES_texture_half_float
+        #endif
+        #endif
+        #endif
+    #elif defined(GRAPHICS_API_OPENGL_33)
+        case RL_PIXELFORMAT_UNCOMPRESSED_GRAYSCALE: *glInternalFormat = GL_R8; *glFormat = GL_RED; *glType = GL_UNSIGNED_BYTE; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA: *glInternalFormat = GL_RG8; *glFormat = GL_RG; *glType = GL_UNSIGNED_BYTE; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R5G6B5: *glInternalFormat = GL_RGB565; *glFormat = GL_RGB; *glType = GL_UNSIGNED_SHORT_5_6_5; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8: *glInternalFormat = GL_RGB8; *glFormat = GL_RGB; *glType = GL_UNSIGNED_BYTE; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R5G5B5A1: *glInternalFormat = GL_RGB5_A1; *glFormat = GL_RGBA; *glType = GL_UNSIGNED_SHORT_5_5_5_1; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R4G4B4A4: *glInternalFormat = GL_RGBA4; *glFormat = GL_RGBA; *glType = GL_UNSIGNED_SHORT_4_4_4_4; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8A8: *glInternalFormat = GL_RGBA8; *glFormat = GL_RGBA; *glType = GL_UNSIGNED_BYTE; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R32: if (RLGL.ExtSupported.texFloat32) *glInternalFormat = GL_R32F; *glFormat = GL_RED; *glType = GL_FLOAT; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R32G32B32: if (RLGL.ExtSupported.texFloat32) *glInternalFormat = GL_RGB32F; *glFormat = GL_RGB; *glType = GL_FLOAT; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R32G32B32A32: if (RLGL.ExtSupported.texFloat32) *glInternalFormat = GL_RGBA32F; *glFormat = GL_RGBA; *glType = GL_FLOAT; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R16: if (RLGL.ExtSupported.texFloat16) *glInternalFormat = GL_R16F; *glFormat = GL_RED; *glType = GL_HALF_FLOAT; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16: if (RLGL.ExtSupported.texFloat16) *glInternalFormat = GL_RGB16F; *glFormat = GL_RGB; *glType = GL_HALF_FLOAT; break;
+        case RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16A16: if (RLGL.ExtSupported.texFloat16) *glInternalFormat = GL_RGBA16F; *glFormat = GL_RGBA; *glType = GL_HALF_FLOAT; break;
+    #endif
+    #if !defined(GRAPHICS_API_OPENGL_11)
+        case RL_PIXELFORMAT_COMPRESSED_DXT1_RGB: if (RLGL.ExtSupported.texCompDXT) *glInternalFormat = GL_COMPRESSED_RGB_S3TC_DXT1_EXT; break;
+        case RL_PIXELFORMAT_COMPRESSED_DXT1_RGBA: if (RLGL.ExtSupported.texCompDXT) *glInternalFormat = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT; break;
+        case RL_PIXELFORMAT_COMPRESSED_DXT3_RGBA: if (RLGL.ExtSupported.texCompDXT) *glInternalFormat = GL_COMPRESSED_RGBA_S3TC_DXT3_EXT; break;
+        case RL_PIXELFORMAT_COMPRESSED_DXT5_RGBA: if (RLGL.ExtSupported.texCompDXT) *glInternalFormat = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT; break;
+        case RL_PIXELFORMAT_COMPRESSED_ETC1_RGB: if (RLGL.ExtSupported.texCompETC1) *glInternalFormat = GL_ETC1_RGB8_OES; break;                      // NOTE: Requires OpenGL ES 2.0 or OpenGL 4.3
+        case RL_PIXELFORMAT_COMPRESSED_ETC2_RGB: if (RLGL.ExtSupported.texCompETC2) *glInternalFormat = GL_COMPRESSED_RGB8_ETC2; break;               // NOTE: Requires OpenGL ES 3.0 or OpenGL 4.3
+        case RL_PIXELFORMAT_COMPRESSED_ETC2_EAC_RGBA: if (RLGL.ExtSupported.texCompETC2) *glInternalFormat = GL_COMPRESSED_RGBA8_ETC2_EAC; break;     // NOTE: Requires OpenGL ES 3.0 or OpenGL 4.3
+        case RL_PIXELFORMAT_COMPRESSED_PVRT_RGB: if (RLGL.ExtSupported.texCompPVRT) *glInternalFormat = GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG; break;    // NOTE: Requires PowerVR GPU
+        case RL_PIXELFORMAT_COMPRESSED_PVRT_RGBA: if (RLGL.ExtSupported.texCompPVRT) *glInternalFormat = GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG; break;  // NOTE: Requires PowerVR GPU
+        case RL_PIXELFORMAT_COMPRESSED_ASTC_4x4_RGBA: if (RLGL.ExtSupported.texCompASTC) *glInternalFormat = GL_COMPRESSED_RGBA_ASTC_4x4_KHR; break;  // NOTE: Requires OpenGL ES 3.1 or OpenGL 4.3
+        case RL_PIXELFORMAT_COMPRESSED_ASTC_8x8_RGBA: if (RLGL.ExtSupported.texCompASTC) *glInternalFormat = GL_COMPRESSED_RGBA_ASTC_8x8_KHR; break;  // NOTE: Requires OpenGL ES 3.1 or OpenGL 4.3
+    #endif
+        default: TRACELOG(RL_LOG_WARNING, "TEXTURE: Current format not supported (%i)", format); break;
+    }
+}
+
+// Unload texture from GPU memory
+void rlUnloadTexture(unsigned int id)
+{
+    glDeleteTextures(1, &id);
+}
+
+// Generate mipmap data for selected texture
+// NOTE: Only supports GPU mipmap generation
+void rlGenTextureMipmaps(unsigned int id, int width, int height, int format, int *mipmaps)
+{
+    if (!isGpuReady) { TRACELOG(RL_LOG_WARNING, "GL: GPU is not ready to load data, trying to load before InitWindow()?"); return; }
+
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    glBindTexture(GL_TEXTURE_2D, id);
+
+    // Check if texture is power-of-two (POT)
+    bool texIsPOT = false;
+
+    if (((width > 0) && ((width & (width - 1)) == 0)) &&
+        ((height > 0) && ((height & (height - 1)) == 0))) texIsPOT = true;
+
+    if ((texIsPOT) || (RLGL.ExtSupported.texNPOT))
+    {
+        //glHint(GL_GENERATE_MIPMAP_HINT, GL_DONT_CARE);   // Hint for mipmaps generation algorithm: GL_FASTEST, GL_NICEST, GL_DONT_CARE
+        glGenerateMipmap(GL_TEXTURE_2D);    // Generate mipmaps automatically
+
+        #define MIN(a,b) (((a)<(b))? (a):(b))
+        #define MAX(a,b) (((a)>(b))? (a):(b))
+
+        *mipmaps = 1 + (int)floor(log(MAX(width, height))/log(2));
+        TRACELOG(RL_LOG_INFO, "TEXTURE: [ID %i] Mipmaps generated automatically, total: %i", id, *mipmaps);
+    }
+    else TRACELOG(RL_LOG_WARNING, "TEXTURE: [ID %i] Failed to generate mipmaps", id);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+#else
+    TRACELOG(RL_LOG_WARNING, "TEXTURE: [ID %i] GPU mipmap generation not supported", id);
+#endif
+}
+
+// Read texture pixel data
+void *rlReadTexturePixels(unsigned int id, int width, int height, int format)
+{
+    void *pixels = NULL;
+
+#if defined(GRAPHICS_API_OPENGL_11) || defined(GRAPHICS_API_OPENGL_33)
+    glBindTexture(GL_TEXTURE_2D, id);
+
+    // NOTE: Using texture id, some texture info can be retrieved (but not on OpenGL ES 2.0)
+    // Possible texture info: GL_TEXTURE_RED_SIZE, GL_TEXTURE_GREEN_SIZE, GL_TEXTURE_BLUE_SIZE, GL_TEXTURE_ALPHA_SIZE
+    //int width, height, format;
+    //glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
+    //glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
+    //glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &format);
+
+    // NOTE: Each row written to or read from by OpenGL pixel operations like glGetTexImage are aligned to a 4 byte boundary by default, which may add some padding
+    // Use glPixelStorei to modify padding with the GL_[UN]PACK_ALIGNMENT setting
+    // GL_PACK_ALIGNMENT affects operations that read from OpenGL memory (glReadPixels, glGetTexImage, etc.)
+    // GL_UNPACK_ALIGNMENT affects operations that write to OpenGL memory (glTexImage, etc.)
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+
+    unsigned int glInternalFormat, glFormat, glType;
+    rlGetGlTextureFormats(format, &glInternalFormat, &glFormat, &glType);
+    unsigned int size = rlGetPixelDataSize(width, height, format);
+
+    if ((glInternalFormat != 0) && (format < RL_PIXELFORMAT_COMPRESSED_DXT1_RGB))
+    {
+        pixels = RL_CALLOC(size, 1);
+        glGetTexImage(GL_TEXTURE_2D, 0, glFormat, glType, pixels);
+    }
+    else TRACELOG(RL_LOG_WARNING, "TEXTURE: [ID %i] Data retrieval not suported for pixel format (%i)", id, format);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+#endif
+
+#if defined(GRAPHICS_API_OPENGL_ES2)
+    // glGetTexImage() is not available on OpenGL ES 2.0
+    // Texture width and height are required on OpenGL ES 2.0, there is no way to get it from texture id
+    // Two possible Options:
+    // 1 - Bind texture to color fbo attachment and glReadPixels()
+    // 2 - Create an fbo, activate it, render quad with texture, glReadPixels()
+    // Using Option 1, care for texture format on retrieval
+    // NOTE: This behaviour could be conditioned by graphic driver...
+    unsigned int fboId = rlLoadFramebuffer();
+
+    glBindFramebuffer(GL_FRAMEBUFFER, fboId);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // Attach our texture to FBO
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, id, 0);
+
+    // Reading data as RGBA because FBO texture is configured as RGBA, despite binding another texture format
+    pixels = RL_CALLOC(rlGetPixelDataSize(width, height, RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8A8), 1);
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // Clean up temporal fbo
+    rlUnloadFramebuffer(fboId);
+#endif
+
+    return pixels;
+}
+
+// Copy framebuffer pixel data to internal buffer
+void rlCopyFramebuffer(int x, int y, int width, int height, int format, void *pixels)
+{
+#if defined(GRAPHICS_API_OPENGL_SOFTWARE)
+    unsigned int glInternalFormat, glFormat, glType;
+    rlGetGlTextureFormats(format, &glInternalFormat, &glFormat, &glType); // Get OpenGL texture format
+    swReadPixels(x, y, width, height, glFormat, glType, pixels);
+#endif
+}
+
+// Resize internal framebuffer
+void rlResizeFramebuffer(int width, int height)
+{
+#if defined(GRAPHICS_API_OPENGL_SOFTWARE)
+    swResize(width, height);
+#endif
+}
+
+// Read screen pixel data (color buffer)
+unsigned char *rlReadScreenPixels(int width, int height)
+{
+    unsigned char *imgData = (unsigned char *)RL_CALLOC(width*height*4, sizeof(unsigned char));
+
+    // NOTE: glReadPixels() returns image flipped vertically -> (0,0) is the bottom left corner of the framebuffer
+    // WARNING: Getting alpha channel! Be careful, it can be transparent if not cleared properly!
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, imgData);
+
+    // Flip image vertically
+    // NOTE: Alpha value has already been applied to RGB in framebuffer, not needed anymore
+    for (int y = height - 1; y >= height/2; y--)
+    {
+        for (int x = 0; x < (width*4); x += 4)
+        {
+            unsigned int s = ((height - 1) - y)*width*4 + x;
+            unsigned int e = y*width*4 + x;
+
+            unsigned char r = imgData[s];
+            unsigned char g = imgData[s+1];
+            unsigned char b = imgData[s+2];
+
+            imgData[s] = imgData[e];
+            imgData[s+1] = imgData[e+1];
+            imgData[s+2] = imgData[e+2];
+            imgData[s+3] = 255; // Set alpha component value to 255 (no trasparent image retrieval)
+
+            imgData[e] = r;
+            imgData[e+1] = g;
+            imgData[e+2] = b;
+            imgData[e+3] = 255; // Ditto
+        }
+    }
+
+    return imgData;     // NOTE: image data should be freed
+}
+
+// Framebuffer management (fbo)
+//-----------------------------------------------------------------------------------------
+// Load a framebuffer to be used for rendering
+// NOTE: No textures attached
+unsigned int rlLoadFramebuffer(void)
+{
+    unsigned int fboId = 0;
+    if (!isGpuReady) { TRACELOG(RL_LOG_WARNING, "GL: GPU is not ready to load data, trying to load before InitWindow()?"); return fboId; }
+
+#if (defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2) || defined(GRAPHICS_API_OPENGL_SOFTWARE))
+    glGenFramebuffers(1, &fboId);         // Create the framebuffer object
+    glBindFramebuffer(GL_FRAMEBUFFER, 0); // Unbind any framebuffer
+#endif
+
+    return fboId;
+}
+
+// Attach color buffer texture to a framebuffer object (unloads previous attachment)
+// NOTE: Attach type: 0-Color, 1-Depth renderbuffer, 2-Depth texture
+void rlFramebufferAttach(unsigned int id, unsigned int texId, int attachType, int texType, int mipLevel)
+{
+#if (defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2) || defined(GRAPHICS_API_OPENGL_SOFTWARE))
+    glBindFramebuffer(GL_FRAMEBUFFER, id);
+
+    switch (attachType)
+    {
+        case RL_ATTACHMENT_COLOR_CHANNEL0:
+        case RL_ATTACHMENT_COLOR_CHANNEL1:
+        case RL_ATTACHMENT_COLOR_CHANNEL2:
+        case RL_ATTACHMENT_COLOR_CHANNEL3:
+        case RL_ATTACHMENT_COLOR_CHANNEL4:
+        case RL_ATTACHMENT_COLOR_CHANNEL5:
+        case RL_ATTACHMENT_COLOR_CHANNEL6:
+        case RL_ATTACHMENT_COLOR_CHANNEL7:
+        {
+            if (texType == RL_ATTACHMENT_TEXTURE2D) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + attachType, GL_TEXTURE_2D, texId, mipLevel);
+            else if (texType == RL_ATTACHMENT_RENDERBUFFER) glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + attachType, GL_RENDERBUFFER, texId);
+            else if (texType >= RL_ATTACHMENT_CUBEMAP_POSITIVE_X) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + attachType, GL_TEXTURE_CUBE_MAP_POSITIVE_X + texType, texId, mipLevel);
+        } break;
+        case RL_ATTACHMENT_DEPTH:
+        {
+            if (texType == RL_ATTACHMENT_TEXTURE2D) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, texId, mipLevel);
+            else if (texType == RL_ATTACHMENT_RENDERBUFFER)  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, texId);
+        } break;
+        case RL_ATTACHMENT_STENCIL:
+        {
+            if (texType == RL_ATTACHMENT_TEXTURE2D) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D, texId, mipLevel);
+            else if (texType == RL_ATTACHMENT_RENDERBUFFER)  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, texId);
+        } break;
+        default: break;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+#endif
+}
+
+// Verify render texture is complete
+bool rlFramebufferComplete(unsigned int id)
+{
+    bool result = false;
+
+#if (defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2) || defined(GRAPHICS_API_OPENGL_SOFTWARE))
+    glBindFramebuffer(GL_FRAMEBUFFER, id);
+
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+
+    if (status != GL_FRAMEBUFFER_COMPLETE)
+    {
+        switch (status)
+        {
+            case GL_FRAMEBUFFER_UNSUPPORTED: TRACELOG(RL_LOG_WARNING, "FBO: [ID %i] Framebuffer is unsupported", id); break;
+            case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT: TRACELOG(RL_LOG_WARNING, "FBO: [ID %i] Framebuffer has incomplete attachment", id); break;
+#if defined(GRAPHICS_API_OPENGL_ES2)
+            case GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS: TRACELOG(RL_LOG_WARNING, "FBO: [ID %i] Framebuffer has incomplete dimensions", id); break;
+#endif
+            case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: TRACELOG(RL_LOG_WARNING, "FBO: [ID %i] Framebuffer has a missing attachment", id); break;
+            default: break;
+        }
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    result = (status == GL_FRAMEBUFFER_COMPLETE);
+#endif
+
+    return result;
+}
+
+// Unload framebuffer from GPU memory
+// NOTE: All attached textures/cubemaps/renderbuffers are also deleted
+void rlUnloadFramebuffer(unsigned int id)
+{
+#if (defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2) || defined(GRAPHICS_API_OPENGL_SOFTWARE))
+    // Query depth attachment to automatically delete texture/renderbuffer
+    int depthType = 0;
+    glBindFramebuffer(GL_FRAMEBUFFER, id);   // Bind framebuffer to query depth texture type
+    glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE, &depthType);
+
+    // WARNING: WebGL: INVALID_ENUM: getFramebufferAttachmentParameter: invalid parameter name
+    // REF: https://registry.khronos.org/webgl/specs/latest/1.0/
+    int depthId = 0;
+    glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &depthId);
+
+    unsigned int depthIdU = (unsigned int)depthId;
+    if (depthType == GL_RENDERBUFFER) glDeleteRenderbuffers(1, &depthIdU);
+    else if (depthType == GL_TEXTURE) glDeleteTextures(1, &depthIdU);
+
+    // NOTE: If a texture object is deleted while its image is attached to the *currently bound* framebuffer,
+    // the texture image is automatically detached from the currently bound framebuffer
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &id);
+
+    TRACELOG(RL_LOG_INFO, "FBO: [ID %i] Unloaded framebuffer from VRAM (GPU)", id);
+#endif
+}
+
+// Vertex data management
+//-----------------------------------------------------------------------------------------
+// Load a new attributes buffer
+unsigned int rlLoadVertexBuffer(const void *buffer, int size, bool dynamic)
+{
+    unsigned int id = 0;
+    if (!isGpuReady) { TRACELOG(RL_LOG_WARNING, "GL: GPU is not ready to load data, trying to load before InitWindow()?"); return id; }
+
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    glGenBuffers(1, &id);
+    glBindBuffer(GL_ARRAY_BUFFER, id);
+    glBufferData(GL_ARRAY_BUFFER, size, buffer, dynamic? GL_DYNAMIC_DRAW : GL_STATIC_DRAW);
+#endif
+
+    return id;
+}
+
+// Load a new attributes element buffer
+unsigned int rlLoadVertexBufferElement(const void *buffer, int size, bool dynamic)
+{
+    unsigned int id = 0;
+    if (!isGpuReady) { TRACELOG(RL_LOG_WARNING, "GL: GPU is not ready to load data, trying to load before InitWindow()?"); return id; }
+
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    glGenBuffers(1, &id);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, id);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, size, buffer, dynamic? GL_DYNAMIC_DRAW : GL_STATIC_DRAW);
+#endif
+
+    return id;
+}
+
+// Enable vertex buffer (VBO)
+void rlEnableVertexBuffer(unsigned int id)
+{
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    glBindBuffer(GL_ARRAY_BUFFER, id);
+#endif
+}
+
+// Disable vertex buffer (VBO)
+void rlDisableVertexBuffer(void)
+{
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+#endif
+}
+
+// Enable vertex buffer element (VBO element)
+void rlEnableVertexBufferElement(unsigned int id)
+{
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, id);
+#endif
+}
+
+// Disable vertex buffer element (VBO element)
+void rlDisableVertexBufferElement(void)
+{
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+#endif
+}
+
+// Update vertex buffer with new data
+// NOTE: dataSize and offset must be provided in bytes
+void rlUpdateVertexBuffer(unsigned int id, const void *data, int dataSize, int offset)
+{
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    glBindBuffer(GL_ARRAY_BUFFER, id);
+    glBufferSubData(GL_ARRAY_BUFFER, offset, dataSize, data);
+#endif
+}
+
+// Update vertex buffer elements with new data
+// NOTE: dataSize and offset must be provided in bytes
+void rlUpdateVertexBufferElements(unsigned int id, const void *data, int dataSize, int offset)
+{
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, id);
+    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, offset, dataSize, data);
+#endif
+}
+
+// Enable vertex array object (VAO)
+bool rlEnableVertexArray(unsigned int vaoId)
+{
+    bool result = false;
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    if (RLGL.ExtSupported.vao)
+    {
+        glBindVertexArray(vaoId);
+        result = true;
+    }
+#endif
+    return result;
+}
+
+// Disable vertex array object (VAO)
+void rlDisableVertexArray(void)
+{
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    if (RLGL.ExtSupported.vao) glBindVertexArray(0);
+#endif
+}
+
+// Enable vertex attribute index
+void rlEnableVertexAttribute(unsigned int index)
+{
+#if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
