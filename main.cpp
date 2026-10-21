@@ -313,3 +313,66 @@ void TrafficLane::updateAnimations(int currentIntId, int laneIndex, const std::v
         }
         
         if (!blocked) it->progress += stepSize;
+
+if (it->progress >= 1.0f) {
+            TrafficLane* destLaneObj = allGrid[currentIntId]->lanes[it->destLaneIdx];
+            if (it->destIsQueue) {
+                insertIntoQueueSorted(destLaneObj->vehicleQueue, it->id, it->isEmergency ? 1 : 0, it->isReckless, it->targetDest, it->destPos, it->uTurnCount);
+                int nextNbrId = getShortestPathNextNeighbor(currentIntId, it->targetDest, crashes, allGrid); TurnType chosenTurn = STRAIGHT;
+                if (nextNbrId != -1 && nextNbrId != currentIntId) { for (int d = 0; d < 4; d++) if (allGrid[currentIntId]->neighbors[d] != nullptr && allGrid[currentIntId]->neighbors[d]->id == nextNbrId) { chosenTurn = getTurnTypeForNeighbor(it->destLaneIdx, d); break; } }
+                destLaneObj->vehicleTurns[it->id] = chosenTurn;
+            } else destLaneObj->exitingVehicles.push_back({ it->id, it->isEmergency, it->isReckless, it->targetDest, STRAIGHT, it->destPos, it->uTurnCount });
+            it = activeUTurns.erase(it);
+        } else ++it;
+    }
+
+    for (auto it = exitingVehicles.begin(); it != exitingVehicles.end(); ) {
+        bool stuck = false;
+        if (isRouteBlocked(laneIndex, it->turn, it->pos, center, crashes)) {
+            if (it->pos >= -140.0f) { 
+                TurnType candidates[3] = { STRAIGHT, TURN_LEFT, TURN_RIGHT };
+                TurnType bestTurn = it->turn; int bestDist = 99999;
+                for(TurnType t : candidates) {
+                    if (!isRouteBlocked(laneIndex, t, it->pos, center, crashes)) {
+                        Intersection* nbr = neighbors[getExitDir(laneIndex, t)];
+                        if (nbr != nullptr) {
+                            int dist = getBFSPathDistance(nbr->id, it->targetDest, crashes, allGrid);
+                            if (dist < bestDist) { bestDist = dist; bestTurn = t; }
+                        } else {
+                            if (bestDist == 99999) bestTurn = t;
+                        }
+                    }
+                }
+                if (bestDist < 99999) it->turn = bestTurn; else stuck = true;
+            } else {
+                stuck = true; 
+            }
+        }
+        
+        float speedMult = getSpeedMultiplier(laneIndex, it->id, it->turn, it->pos, allCars, center, crashes);
+        if (stuck) speedMult = 0.0f; 
+        
+        it->pos -= 4.0f * speedMult;
+        
+        if (it->pos <= -600.0f) {
+            int exitDir = getExitDir(laneIndex, it->turn); Intersection* neighbor = neighbors[exitDir];
+            if (neighbor != nullptr && currentIntId != it->targetDest) {
+                int targetLane = (exitDir == 0) ? 1 : (exitDir == 1) ? 0 : (exitDir == 2) ? 3 : 2, nextNbrId = getShortestPathNextNeighbor(neighbor->id, it->targetDest, crashes, allGrid); TurnType chosenTurn = STRAIGHT;
+                if (nextNbrId != -1 && nextNbrId != neighbor->id) { for (int d = 0; d < 4; d++) if (neighbor->neighbors[d] != nullptr && neighbor->neighbors[d]->id == nextNbrId) { chosenTurn = getTurnTypeForNeighbor(targetLane, d); break; } }
+                else { std::vector<TurnType> validTurns = { STRAIGHT, TURN_RIGHT, TURN_LEFT, U_TURN }; for (TurnType candidate : validTurns) if (!isRouteBlocked(targetLane, candidate, -500.0f, neighbor->center, crashes)) { chosenTurn = candidate; break; } }
+                neighbor->lanes[targetLane]->addVehicle(it->id, it->isEmergency, it->isReckless, it->targetDest, chosenTurn, 600.0f); it = exitingVehicles.erase(it);
+            // PLEDGE 3(ii): NEVER disappear until mathematically 5000 units away.
+            } else if (it->pos <= -5000.0f) { 
+                it = exitingVehicles.erase(it); 
+            } else ++it; 
+        } else ++it;
+    }
+
+    Vehicle *current = vehicleQueue->front, *prevCar = nullptr; int queueIndex = 0;
+    while (current != nullptr) {
+        TurnType myTurn = vehicleTurns.count(current->id) ? vehicleTurns[current->id] : STRAIGHT;
+        bool stuck = false;
+        
+        if (isRouteBlocked(laneIndex, myTurn, current->pos, center, crashes)) {
+            if (current->pos <= 0.0f) { 
+                TurnType candidates[3] = { STRAIGHT, TURN_LEFT, TURN_RIGHT };
