@@ -123,7 +123,6 @@ int getExitDir(int laneIdx, TurnType turn) {
     if (laneIdx == 2) return turn == STRAIGHT ? 3 : turn == TURN_RIGHT ? 0 : turn == TURN_LEFT ? 1 : 2;
     return turn == STRAIGHT ? 2 : turn == TURN_RIGHT ? 1 : turn == TURN_LEFT ? 0 : 3;
 }
-
 int getOpposingLane(int laneIdx) { return laneIdx == 0 ? 1 : laneIdx == 1 ? 0 : laneIdx == 2 ? 3 : 2; }
 TurnType getTurnTypeForNeighbor(int laneIndex, int exitDir) {
     if (laneIndex == 0) return exitDir == 1 ? STRAIGHT : exitDir == 3 ? TURN_RIGHT : exitDir == 2 ? TURN_LEFT : U_TURN;
@@ -186,8 +185,9 @@ float getSpeedMultiplier(int myLaneIndex, int myId, TurnType myTurn, float myPos
             }
         }
 
+
         // Failsafe 2: Look ahead to yield
-        for (float step = 10.0f; step <= 80.0f; step += 10.0f) {
+for (float step = 10.0f; step <= 80.0f; step += 10.0f) {
             Vector2 futureP = computeVehiclePosition(myLaneIndex, myTurn, myPos - step, center);
             if (hypot(futureP.x - otherP.x, futureP.y - otherP.y) < 45.0f) {
                 if (other.laneIndex == myLaneIndex) {
@@ -213,11 +213,14 @@ public:
         for (const auto& ev : exitingVehicles) { Vector2 p = computeVehiclePosition(laneIdx, ev.turn, ev.pos, center); rects.push_back({ ev.id, laneIdx, ev.isReckless, ev.pos, { p.x - 20.0f, p.y - 20.0f, 40.0f, 40.0f } }); }
         for (const auto& ut : activeUTurns) { float t = ut.progress, u = 1.0f - t; Vector2 p = { u*u*u*ut.p0.x + 3*u*u*t*ut.p1.x + 3*u*t*t*ut.p2.x + t*t*t*ut.p3.x, u*u*u*ut.p0.y + 3*u*u*t*ut.p1.y + 3*u*t*t*ut.p2.y + t*t*t*ut.p3.y }; rects.push_back({ ut.id, laneIdx, ut.isReckless, 9999.0f, { p.x - 20.0f, p.y - 20.0f, 40.0f, 40.0f } }); }
     }
+    
+    // Explicitly implemented to clear crashed vehicles out of lane memory
     void removeCrashedVehicles(const std::vector<int>& crashedIDs) {
         for (auto it = exitingVehicles.begin(); it != exitingVehicles.end(); ) { if (find(crashedIDs.begin(), crashedIDs.end(), it->id) != crashedIDs.end()) it = exitingVehicles.erase(it); else ++it; }
         for (auto it = activeUTurns.begin(); it != activeUTurns.end(); ) { if (find(crashedIDs.begin(), crashedIDs.end(), it->id) != crashedIDs.end()) it = activeUTurns.erase(it); else ++it; }
         for (int id : crashedIDs) { removeVehicleById(vehicleQueue, id); vehicleTurns.erase(id); }
     }
+    
     void updateAnimations(int currentIntId, int laneIndex, const std::vector<CarRect>& allCars, Intersection* neighbors[4], const std::vector<CrashEvent>& crashes, Intersection* allGrid[6]);
     void setState(LightState state) { currentState = state; } LightState getState() const { return currentState; }
     int getQueueSize() const { return vehicleQueue->totalCount; } int getEmergencyCount() const { return vehicleQueue->emergencyCount; }
@@ -247,12 +250,15 @@ public:
         int clockwiseOrder[4] = {0, 2, 1, 3}; std::vector<int> emergencyLanes;
         for (int i = 0; i < 4; i++) { lanes[i]->setState(RED_STATE); if (lanes[i]->getEmergencyCount() > 0) emergencyLanes.push_back(i); }
         if (!emergencyLanes.empty()) {
-            for (int el : emergencyLanes) lanes[el]->setState(GREEN_STATE);
+for (int el : emergencyLanes) lanes[el]->setState(GREEN_STATE);
             for (int k = 0; k < 4; k++) if (lanes[clockwiseOrder[k]]->getEmergencyCount() > 0) activeLaneIndex = clockwiseOrder[(k + 1) % 4];
         } else { lanes[activeLaneIndex]->setState(GREEN_STATE); activeLaneIndex = activeLaneIndex == 0 ? 2 : (activeLaneIndex == 2 ? 1 : (activeLaneIndex == 1 ? 3 : 0)); }
     }
     void update(std::vector<CarRect>& allCars, const std::vector<CrashEvent>& crashes, Intersection* grid[6]) { for (int i = 0; i < 4; i++) lanes[i]->updateAnimations(id, i, allCars, neighbors, crashes, grid); }
+    
+    // Explicitly implemented to prevent compiler errors
     void removeCrashedVehicles(const std::vector<int>& crashedIDs) { for (int i = 0; i < 4; i++) lanes[i]->removeCrashedVehicles(crashedIDs); }
+    
     void drawStopLines() { DrawRectangle(center.x - 140, center.y - 144, 140, 4, WHITE); DrawRectangle(center.x, center.y + 140, 140, 4, WHITE); DrawRectangle(center.x + 140, center.y - 140, 4, 140, WHITE); DrawRectangle(center.x - 144, center.y, 4, 140, WHITE); }
 };
 
@@ -307,8 +313,8 @@ void TrafficLane::updateAnimations(int currentIntId, int laneIndex, const std::v
         }
         
         if (!blocked) it->progress += stepSize;
-        
-        if (it->progress >= 1.0f) {
+
+if (it->progress >= 1.0f) {
             TrafficLane* destLaneObj = allGrid[currentIntId]->lanes[it->destLaneIdx];
             if (it->destIsQueue) {
                 insertIntoQueueSorted(destLaneObj->vehicleQueue, it->id, it->isEmergency ? 1 : 0, it->isReckless, it->targetDest, it->destPos, it->uTurnCount);
@@ -332,6 +338,8 @@ void TrafficLane::updateAnimations(int currentIntId, int laneIndex, const std::v
                         if (nbr != nullptr) {
                             int dist = getBFSPathDistance(nbr->id, it->targetDest, crashes, allGrid);
                             if (dist < bestDist) { bestDist = dist; bestTurn = t; }
+                        } else {
+                            if (bestDist == 99999) bestTurn = t;
                         }
                     }
                 }
@@ -353,7 +361,7 @@ void TrafficLane::updateAnimations(int currentIntId, int laneIndex, const std::v
                 if (nextNbrId != -1 && nextNbrId != neighbor->id) { for (int d = 0; d < 4; d++) if (neighbor->neighbors[d] != nullptr && neighbor->neighbors[d]->id == nextNbrId) { chosenTurn = getTurnTypeForNeighbor(targetLane, d); break; } }
                 else { std::vector<TurnType> validTurns = { STRAIGHT, TURN_RIGHT, TURN_LEFT, U_TURN }; for (TurnType candidate : validTurns) if (!isRouteBlocked(targetLane, candidate, -500.0f, neighbor->center, crashes)) { chosenTurn = candidate; break; } }
                 neighbor->lanes[targetLane]->addVehicle(it->id, it->isEmergency, it->isReckless, it->targetDest, chosenTurn, 600.0f); it = exitingVehicles.erase(it);
-            // PLEDGE: Never disappear until truly out of the physics world (-5000)
+            // PLEDGE 3(ii): NEVER disappear until mathematically 5000 units away.
             } else if (it->pos <= -5000.0f) { 
                 it = exitingVehicles.erase(it); 
             } else ++it; 
@@ -368,193 +376,3 @@ void TrafficLane::updateAnimations(int currentIntId, int laneIndex, const std::v
         if (isRouteBlocked(laneIndex, myTurn, current->pos, center, crashes)) {
             if (current->pos <= 0.0f) { 
                 TurnType candidates[3] = { STRAIGHT, TURN_LEFT, TURN_RIGHT };
-                TurnType bestTurn = myTurn; int bestDist = 99999;
-                for(TurnType t : candidates) {
-                    if (!isRouteBlocked(laneIndex, t, current->pos, center, crashes)) {
-                        Intersection* nbr = neighbors[getExitDir(laneIndex, t)];
-                        if (nbr != nullptr) {
-                            int dist = getBFSPathDistance(nbr->id, current->targetDest, crashes, allGrid);
-                            if (dist < bestDist) { bestDist = dist; bestTurn = t; }
-                        }
-                    }
-                }
-                if (bestDist < 99999) { vehicleTurns[current->id] = bestTurn; myTurn = bestTurn; } 
-                else { stuck = true; } 
-            } 
-            else if (current->pos > 0.0f) {
-                int oppLane = getOpposingLane(laneIndex);
-                int exitDir = getExitDir(oppLane, STRAIGHT);
-                Intersection* uTurnNeighbor = neighbors[exitDir];
-                bool uTurnViable = false;
-                
-                float destPosVal = -current->pos - 280.0f;
-                if (uTurnNeighbor != nullptr && !isRouteBlocked(oppLane, STRAIGHT, destPosVal, center, crashes)) {
-                    int dist = getBFSPathDistance(uTurnNeighbor->id, current->targetDest, crashes, allGrid);
-                    if (dist < 99999) uTurnViable = true;
-                }
-                
-                Vector2 curP = computeVehiclePosition(laneIndex, myTurn, current->pos, center);
-                Vector2 destP = computeVehiclePosition(oppLane, STRAIGHT, destPosVal, center);
-                if (uTurnViable && isOppositeLaneClearForUTurn(destP, allCars, current->id)) {
-                    UTurningVehicle ut = { current->id, current->isEmergency == 1, current->isReckless, current->targetDest, myTurn, current->pos, destPosVal, oppLane, false, curP, {0,0}, {0,0}, {0,0}, 0.0f, current->uTurnCount + 1 };
-                    Vector2 d0 = getLaneDirection(laneIndex, ut.originTurn, ut.startPos, center), d3 = getLaneDirection(ut.destLaneIdx, STRAIGHT, ut.destPos, center);
-                    ut.p1 = { ut.p0.x + d0.x * 120.0f, ut.p0.y + d0.y * 120.0f }; ut.p3 = computeVehiclePosition(ut.destLaneIdx, STRAIGHT, ut.destPos, center); ut.p2 = { ut.p3.x - d3.x * 120.0f, ut.p3.y - d3.y * 120.0f };
-                    activeUTurns.push_back(ut); int cid = current->id; vehicleTurns.erase(cid); removeVehicleById(vehicleQueue, cid); current = vehicleQueue->front; queueIndex = 0; prevCar = nullptr; continue;
-                } else {
-                    stuck = true; 
-                }
-            }
-        }
-
-        float speedMult = getSpeedMultiplier(laneIndex, current->id, myTurn, current->pos, allCars, center, crashes);
-        if (stuck) speedMult = 0.0f; 
-
-        if (queueIndex == 0) {
-            if (currentState == GREEN_STATE || current->isReckless || (currentState == YELLOW_STATE && current->pos <= 20.0f)) {
-                if (current->isReckless) {
-                    if (speedMult > 0.0f) current->pos -= 3.5f * speedMult;
-                } else {
-                    if (speedMult > 0.0f) { current->pos -= 3.5f * speedMult; }
-                }
-                
-                if (current->pos <= 0.0f) {
-                    ExitingVehicle ev = { current->id, current->isEmergency == 1, current->isReckless, current->targetDest, myTurn, current->pos, current->uTurnCount };
-                    int nextNbrId = getShortestPathNextNeighbor(currentIntId, ev.targetDest, crashes, allGrid); TurnType bestTurn = myTurn;
-                    if (nextNbrId != -1 && nextNbrId != currentIntId) { for (int d = 0; d < 4; d++) if (neighbors[d] != nullptr && neighbors[d]->id == nextNbrId) { bestTurn = getTurnTypeForNeighbor(laneIndex, d); break; } }
-                    else { std::vector<TurnType> turnOptions = { myTurn, STRAIGHT, TURN_RIGHT, TURN_LEFT, U_TURN }; for (TurnType candidate : turnOptions) if (!isRouteBlocked(laneIndex, candidate, -500.0f, center, crashes)) { bestTurn = candidate; break; } }
-                    ev.turn = bestTurn; exitingVehicles.push_back(ev); vehicleTurns.erase(current->id); delete dequeue(vehicleQueue); current = vehicleQueue->front; continue;
-                }
-            } else if (current->pos > 0.0f) { 
-                if (speedMult > 0.0f) { current->pos -= 3.5f * speedMult; if (current->pos < 0.0f) current->pos = 0.0f; } 
-            }
-        } else {
-            // PLEDGE 1: Safe queueing. Mathematical snap guarantees NO OVERLAP in lines
-            float targetPos = max(queueIndex * 60.0f, prevCar != nullptr ? prevCar->pos + 60.0f : 0.0f);
-            if (current->pos < targetPos) {
-                current->pos = targetPos; 
-            } else if (current->pos > targetPos && speedMult > 0.0f) { 
-                current->pos -= 3.5f * speedMult; 
-                if (current->pos < targetPos) current->pos = targetPos; 
-            }
-        }
-        prevCar = current; current = current->next; queueIndex++;
-    }
-}
-
-class IntersectionSimulator {
-private:
-    Intersection* grid[6]; std::vector<Skyscraper> buildings; std::vector<CrashEvent> crashes; int vehicleCounter, frameCounter, lastCrashFrame; Camera2D camera; float speedMultiplier, timeAccumulator; Rectangle speedButtonRect;
-    void generateCity() {
-        int xRanges[4][2] = { {-1060, -140}, {140, 1060}, {1340, 2260}, {2540, 3460} };
-        int yRanges[3][2] = { {-860, 60}, {340, 1260}, {1540, 2460} };
-        Color colors[8] = { {70, 100, 130, 255}, {140, 85, 75, 255}, {110, 115, 85, 255}, {120, 110, 105, 255}, {85, 95, 110, 255}, {105, 85, 110, 255}, {70, 115, 110, 255}, {140, 125, 105, 255} };
-        for (int r = 0; r < 3; r++) for (int c = 0; c < 4; c++) for (int x = xRanges[c][0] + 35; x < xRanges[c][1] - 85; x += 50) for (int y = yRanges[r][0] + 35; y < yRanges[r][1] - 85; y += 50) {
-            if (rand() % 100 < 50) {
-                Skyscraper b; int w = 28 + rand() % 12, h = 28 + rand() % 12; b.base = { (float)x + (50 - w) / 2.0f, (float)y + (50 - h) / 2.0f, (float)w, (float)h };
-                b.height = (rand() % 100) / 100.0f * 0.15f + 0.08f; b.col = colors[rand() % 8];
-                Rectangle checkRect = { b.base.x - 40, b.base.y - 40, b.base.width + 100, b.base.height + 100 }; bool overlap = false;
-                for (int cx : {0, 1200, 2400}) for (int cy : {200, 1400}) { Rectangle lights[4] = { {(float)cx-175, (float)cy-220, 46, 113}, {(float)cx+145, (float)cy+145, 46, 113}, {(float)cx+145, (float)cy-220, 46, 113}, {(float)cx-175, (float)cy+145, 46, 113} }; for(int l=0; l<4; l++) if (CheckCollisionRecs(checkRect, lights[l])) overlap = true; }
-                if (!overlap) buildings.push_back(b);
-            }
-        }
-        std::sort(buildings.begin(), buildings.end(), [](const Skyscraper& a, const Skyscraper& b) { return pow(a.base.x + a.base.width/2 - 1200, 2) + pow(a.base.y + a.base.height/2 - 800, 2) > pow(b.base.x + b.base.width/2 - 1200, 2) + pow(b.base.y + b.base.height/2 - 800, 2); });
-    }
-    void drawAllRoads() {
-        for (int x : {0, 1200, 2400}) { DrawRectangle(x - 140, -1200, 280, 4200, GRAY); for (int y = -1200; y < 3000; y += 40) { bool inInt = false; for (int cy : {200, 1400}) if (abs(y - cy) < 140) inInt = true; if (!inInt) DrawRectangle(x - 2, y + 10, 4, 20, YELLOW); } }
-        for (int y : {200, 1400}) { DrawRectangle(-1600, y - 140, 5600, 280, GRAY); for (int x = -1600; x < 4000; x += 40) { bool inInt = false; for (int cx : {0, 1200, 2400}) if (abs(x - cx) < 140) inInt = true; if (!inInt) DrawRectangle(x + 10, y - 2, 20, 4, YELLOW); } }
-    }
-public:
-    IntersectionSimulator() {
-        grid[0] = new Intersection(0, 0, 200); grid[1] = new Intersection(1, 1200, 200); grid[2] = new Intersection(2, 2400, 200); grid[3] = new Intersection(3, 0, 1400); grid[4] = new Intersection(4, 1200, 1400); grid[5] = new Intersection(5, 2400, 1400);
-        for (int r = 0; r < 2; r++) for (int c = 0; c < 3; c++) { int i = r * 3 + c; if (r > 0) grid[i]->neighbors[0] = grid[(r - 1) * 3 + c]; if (r < 1) grid[i]->neighbors[1] = grid[(r + 1) * 3 + c]; if (c < 2) grid[i]->neighbors[2] = grid[r * 3 + c + 1]; if (c > 0) grid[i]->neighbors[3] = grid[r * 3 + c - 1]; }
-        vehicleCounter = 1000; frameCounter = 0; lastCrashFrame = -5400; srand(time(0)); camera = { 0 }; camera.target = { 1200.0f, 800.0f }; camera.offset = { 600.0f, 400.0f }; camera.rotation = 0.0f; camera.zoom = 0.25f;
-        generateCity(); speedMultiplier = 1.0f; timeAccumulator = 0.0f; speedButtonRect = { 20.0f, 730.0f, 100.0f, 50.0f };
-    }
-    ~IntersectionSimulator() { for(int i = 0; i < 6; i++) delete grid[i]; }
-    void generateTraffic() { 
-        int active = 0; 
-        for(int i=0; i<6; i++) for(int j=0; j<4; j++) active += grid[i]->lanes[j]->getQueueSize() + grid[i]->lanes[j]->exitingVehicles.size() + grid[i]->lanes[j]->activeUTurns.size();
-        if (active > 160) return; 
-
-        for (int i = 0; i < 6; i++) for (int lane = 0; lane < 4; lane++) {
-            if (grid[i]->neighbors[lane] == nullptr && rand() % 1000 < 20) {
-                bool isReck = false;
-                // Force a reckless driver every 5400 frames (30s at 3x) to guarantee your crash timing
-                if (crashes.empty() && frameCounter - lastCrashFrame > 5400) isReck = true;
-                grid[i]->lanes[lane]->addVehicle(++vehicleCounter, (rand() % 100) < 5, isReck, rand() % 6, getTurnTypeForNeighbor(lane, rand() % 4), 1500.0f); 
-            }
-        }
-    }
-    void updateLogic() {
-        frameCounter++;
-        if (frameCounter % 180 == 135) for (int i = 0; i < 6; i++) for (int j = 0; j < 4; j++) if (grid[i]->lanes[j]->getState() == GREEN_STATE) grid[i]->lanes[j]->setState(YELLOW_STATE);
-        if (frameCounter % 180 == 0) for (int i = 0; i < 6; i++) grid[i]->optimizeSignal();
-        if (frameCounter % 12 == 0) generateTraffic();
-        std::vector<CarRect> allGlobalCars; for (int i = 0; i < 6; i++) for (int j = 0; j < 4; j++) grid[i]->lanes[j]->getAllCarRects(j, allGlobalCars);
-        
-        for (size_t i = 0; i < allGlobalCars.size(); i++) for (size_t j = i + 1; j < allGlobalCars.size(); j++) {
-            Vector2 p1 = { allGlobalCars[i].rect.x + 20.0f, allGlobalCars[i].rect.y + 20.0f };
-            Vector2 p2 = { allGlobalCars[j].rect.x + 20.0f, allGlobalCars[j].rect.y + 20.0f };
-            
-            if (hypot(p1.x - p2.x, p1.y - p2.y) < 38.0f && allGlobalCars[i].id != allGlobalCars[j].id) {
-                if (allGlobalCars[i].isReckless || allGlobalCars[j].isReckless) {
-                    if (crashes.empty() && frameCounter - lastCrashFrame > 5400) { 
-                        Vector2 crashPos = { (p1.x + p2.x)/2.0f, (p1.y + p2.y)/2.0f };
-                        // Crash stays active for exactly 1800 frames (30 seconds at 1x speed).
-                        crashes.push_back({crashPos, 1800, allGlobalCars[i].id, allGlobalCars[j].id}); 
-                        lastCrashFrame = frameCounter;
-                    }
-                }
-            }
-        }
-        
-        // When the crash vanishes, the EXACT TWO CARS are PERMANENTLY ERASED so they never reappear
-        std::vector<int> crashedCarIDsToErase;
-        for (auto it = crashes.begin(); it != crashes.end(); ) { 
-            it->framesLeft--; 
-            if (it->framesLeft <= 0) { 
-                crashedCarIDsToErase.push_back(it->car1Id);
-                crashedCarIDsToErase.push_back(it->car2Id);
-                it = crashes.erase(it); 
-            } else {
-                ++it; 
-            }
-        }
-        if (!crashedCarIDsToErase.empty()) { 
-            std::sort(crashedCarIDsToErase.begin(), crashedCarIDsToErase.end()); 
-            crashedCarIDsToErase.erase(std::unique(crashedCarIDsToErase.begin(), crashedCarIDsToErase.end()), crashedCarIDsToErase.end()); 
-            for (int i = 0; i < 6; i++) grid[i]->removeCrashedVehicles(crashedCarIDsToErase); 
-        }
-
-        for (int i = 0; i < 6; i++) { std::vector<CarRect> localCars; for (int j = 0; j < 4; j++) grid[i]->lanes[j]->getAllCarRects(j, localCars); grid[i]->update(localCars, crashes, grid); }
-    }
-    void drawLogic() {
-        BeginDrawing(); ClearBackground({35, 40, 45, 255}); BeginMode2D(camera); drawAllRoads();
-        for (int i = 0; i < 6; i++) grid[i]->drawStopLines();
-        for (const auto& b : buildings) DrawRectangleRec({b.base.x + b.height * 60.0f, b.base.y + b.height * 40.0f, b.base.width, b.base.height}, {15, 20, 25, 120});
-        for (int i = 0; i < 6; i++) for (int j = 0; j < 4; j++) grid[i]->lanes[j]->drawCars(j);
-        Vector2 focal = { 1200.0f, 800.0f };
-        for (const auto& b : buildings) {
-            int layers = (int)(b.height * 50);
-            for (int i = 0; i < layers; i++) DrawRectangleRec({b.base.x + (b.base.x + b.base.width/2 - focal.x) * b.height * 0.3f * ((float)i/layers), b.base.y + (b.base.y + b.base.height/2 - focal.y) * b.height * 0.3f * ((float)i/layers), b.base.width, b.base.height}, AdjustBrightness(b.col, ((float)i/layers) * 0.5f - 0.25f));
-            float ox = (b.base.x + b.base.width/2 - focal.x) * b.height * 0.3f, oy = (b.base.y + b.base.height/2 - focal.y) * b.height * 0.3f;
-            DrawRectangleLinesEx({b.base.x + ox, b.base.y + oy, b.base.width, b.base.height}, 2.0f, AdjustBrightness(b.col, 0.2f)); DrawRectangleRec({b.base.x + ox + b.base.width*0.35f, b.base.y + oy + b.base.height*0.35f, b.base.width*0.3f, b.base.height*0.3f}, AdjustBrightness(b.col, 0.4f));
-        }
-        for (int i = 0; i < 6; i++) for (int j = 0; j < 4; j++) grid[i]->lanes[j]->drawLights();
-        for (const auto& crash : crashes) { DrawCircle(crash.pos.x, crash.pos.y, 42, MAROON); DrawCircle(crash.pos.x, crash.pos.y, 36, RED); DrawCircleLines(crash.pos.x, crash.pos.y, 36, WHITE); DrawLineEx({crash.pos.x - 18, crash.pos.y - 18}, {crash.pos.x + 18, crash.pos.y + 18}, 8, WHITE); DrawLineEx({crash.pos.x - 18, crash.pos.y + 18}, {crash.pos.x + 18, crash.pos.y - 18}, 8, WHITE); }
-        EndMode2D(); DrawRectangle(0, 0, 440, 60, Fade(BLACK, 0.7f)); DrawText("Dynamic Traffic Signal Optimization Simulator", 10, 10, 20, WHITE); DrawText("Blue = Normal | Red = Emergency", 10, 35, 15, LIGHTGRAY);
-        DrawRectangleRec(speedButtonRect, CheckCollisionPointRec(GetMousePosition(), speedButtonRect) ? Color{255, 255, 255, 90} : Color{255, 255, 255, 50}); DrawRectangleLinesEx(speedButtonRect, 2.0f, WHITE);
-        const char* speedDisplay = TextFormat((speedMultiplier == (int)speedMultiplier) ? "Speed: %.0fx" : "Speed: %.1fx", speedMultiplier);
-        DrawText(speedDisplay, speedButtonRect.x + (speedButtonRect.width - MeasureText(speedDisplay, 20)) / 2, speedButtonRect.y + 15, 20, WHITE); EndDrawing();
-    }
-    void runFrame() {
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(GetMousePosition(), speedButtonRect)) if ((speedMultiplier += 0.5f) > 3.0f) speedMultiplier = 1.0f;
-        timeAccumulator += speedMultiplier; while (timeAccumulator >= 1.0f) { updateLogic(); timeAccumulator -= 1.0f; } drawLogic();
-    }
-};
-
-int main() {
-    InitWindow(1200, 800, "Dynamic Traffic Signal Optimization Simulator"); SetTargetFPS(60); IntersectionSimulator sim;
-    while (!WindowShouldClose()) sim.runFrame();
-    CloseWindow(); return 0;
-}
