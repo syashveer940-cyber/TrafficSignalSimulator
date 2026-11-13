@@ -84,3 +84,46 @@ PathInfo getPathInfo(int l, TurnType t, Vector2 c) {
     } else {
         i.p0={c.x-140.0f, c.y+70.0f};
         if(t==STRAIGHT){i.p1={c.x,c.y+70}; i.p2={c.x+140,c.y+70}; i.exitDir={1,0};}
+        else if(t==TURN_RIGHT){i.p1={c.x-70,c.y+70}; i.p2={c.x-70,c.y+140}; i.exitDir={0,1};}
+        else if(t==TURN_LEFT){i.p1={c.x+70,c.y+70}; i.p2={c.x+70,c.y-140}; i.exitDir={0,-1};}
+        else{i.p1={c.x+40,c.y}; i.p2={c.x-140,c.y-70}; i.exitDir={-1,0};}
+    } return i;
+}
+Vector2 computeVehiclePosition(int l, TurnType t, float p, Vector2 c) {
+    if(p>0.0f) { if(l==0)return{c.x-70,c.y-140-p}; if(l==1)return{c.x+70,c.y+140+p}; if(l==2)return{c.x+140+p,c.y-70}; return{c.x-140-p,c.y+70}; }
+    PathInfo i=getPathInfo(l,t,c);
+    if(-p<=280.0f) { float u=-p/280.0f, v=1.0f-u; return {v*v*i.p0.x+2.0f*v*u*i.p1.x+u*u*i.p2.x, v*v*i.p0.y+2.0f*v*u*i.p1.y+u*u*i.p2.y}; }
+    return {i.p2.x+i.exitDir.x*(-p-280.0f), i.p2.y+i.exitDir.y*(-p-280.0f)};
+}
+Vector2 getLaneDirection(int l, TurnType t, float p, Vector2 c) {
+    Vector2 pA=computeVehiclePosition(l,t,p,c), pB=computeVehiclePosition(l,t,p-2.0f,c);
+    float len=hypot(pB.x-pA.x,pB.y-pA.y); return len==0.0f?Vector2{0,1}:Vector2{(pB.x-pA.x)/len,(pB.y-pA.y)/len};
+}
+int getExitDir(int l, TurnType t) {
+    if(l==0) return t==STRAIGHT?1:t==TURN_RIGHT?3:t==TURN_LEFT?2:0; if(l==1) return t==STRAIGHT?0:t==TURN_RIGHT?2:t==TURN_LEFT?3:1;
+    if(l==2) return t==STRAIGHT?3:t==TURN_RIGHT?0:t==TURN_LEFT?1:2; return t==STRAIGHT?2:t==TURN_RIGHT?1:t==TURN_LEFT?0:3;
+}
+TurnType getTurnTypeForNeighbor(int l, int e) {
+    if(l==0) return e==1?STRAIGHT:e==3?TURN_RIGHT:e==2?TURN_LEFT:U_TURN; if(l==1) return e==0?STRAIGHT:e==2?TURN_RIGHT:e==3?TURN_LEFT:U_TURN;
+    if(l==2) return e==3?STRAIGHT:e==0?TURN_RIGHT:e==1?TURN_LEFT:U_TURN; return e==2?STRAIGHT:e==1?TURN_RIGHT:e==0?TURN_LEFT:U_TURN;
+}
+float getSafeYieldMultiplier(int l, int id, TurnType t, float pos, const std::vector<CarRect>& cars, Vector2 c) {
+    Vector2 curP = computeVehiclePosition(l, t, pos, c);
+    for (float step=8.0f; step<=75.0f; step+=10.0f) {
+        Vector2 futP = computeVehiclePosition(l, t, pos-step, c);
+        for (const auto& o : cars) {
+            if (o.id == id) continue;
+            float cD = hypot(curP.x-(o.rect.x+20), curP.y-(o.rect.y+20)), fD = hypot(futP.x-(o.rect.x+20), futP.y-(o.rect.y+20));
+            if (fD < 50.0f && fD <= cD) return 0.0f;
+            if (cD < 48.0f && (o.laneIndex == l ? pos > o.pos : o.id < id)) return 0.0f;
+        }
+    } return 1.0f;
+}
+
+class TrafficLane {
+private: 
+    LightState state; int bX, bY; Vector2 center;
+    void drawVehicle(Vector2 p, Vector2 dir, bool emg, bool reck, TimeOfDay tod) {
+        DrawRectangle(p.x-20, p.y-20, 40, 40, emg?RED:(reck?MAGENTA:BLUE)); DrawRectangleLines(p.x-20, p.y-20, 40, 40, BLACK);
+        if (tod==TIME_NIGHT||tod==TIME_EVENING) {
+            Vector2 pR={-dir.y,dir.x}; DrawCircleV({p.x+dir.x*20+pR.x*11,p.y+dir.y*20+pR.y*11},3.2f,Color{255,255,220,255});
