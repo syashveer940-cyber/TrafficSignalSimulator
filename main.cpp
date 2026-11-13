@@ -127,3 +127,24 @@ private:
         DrawRectangle(p.x-20, p.y-20, 40, 40, emg?RED:(reck?MAGENTA:BLUE)); DrawRectangleLines(p.x-20, p.y-20, 40, 40, BLACK);
         if (tod==TIME_NIGHT||tod==TIME_EVENING) {
             Vector2 pR={-dir.y,dir.x}; DrawCircleV({p.x+dir.x*20+pR.x*11,p.y+dir.y*20+pR.y*11},3.2f,Color{255,255,220,255});
+DrawCircleV({p.x+dir.x*20-pR.x*11,p.y+dir.y*20-pR.y*11},3.2f,Color{255,255,220,255});
+            if (tod==TIME_NIGHT) DrawCircleV({p.x+dir.x*35,p.y+dir.y*35},15.0f,Fade(YELLOW,0.18f));
+            DrawCircleV({p.x-dir.x*20+pR.x*11,p.y-dir.y*20+pR.y*11},2.8f,RED); DrawCircleV({p.x-dir.x*20-pR.x*11,p.y-dir.y*20-pR.y*11},2.8f,RED);
+        }
+    }
+public:
+    Queue* vQ; std::vector<ExitingVehicle> exVs; std::map<int,TurnType> vTurns; std::vector<UTurningVehicle> aUTs;
+    TrafficLane(int x, int y, Vector2 c) { vQ = createQueue(); state = RED_STATE; bX = x; bY = y; center = c; }
+    ~TrafficLane() { destroyQueue(vQ); }
+    void addVehicle(int id, bool emg, bool reck, int dest, TurnType t, float sP, float mS, int oL) { enqueue(vQ,id,emg?1:0,reck,dest,sP,mS,oL); vTurns[id]=t; }
+    void getAllCarRects(int l, std::vector<CarRect>& rs) const {
+        for (Vehicle* c=vQ->front; c; c=c->next) { if(c->pos>1400.f)continue; Vector2 p=computeVehiclePosition(l,vTurns.count(c->id)?vTurns.at(c->id):STRAIGHT,c->pos,center); rs.push_back({c->id,l,c->isReckless,c->pos,{p.x-20,p.y-20,40,40}}); }
+        for (const auto& ev:exVs) { if(ev.pos<-1400.f)continue; Vector2 p=computeVehiclePosition(l,ev.turn,ev.pos,center); rs.push_back({ev.id,l,ev.isReckless,ev.pos,{p.x-20,p.y-20,40,40}}); }
+        for (const auto& ut:aUTs) { float t=ut.progress,u=1.f-t; Vector2 p={u*u*u*ut.p0.x+3*u*u*t*ut.p1.x+3*u*t*t*ut.p2.x+t*t*t*ut.p3.x, u*u*u*ut.p0.y+3*u*u*t*ut.p1.y+3*u*t*t*ut.p2.y+t*t*t*ut.p3.y}; rs.push_back({ut.id,l,ut.isReckless,9999.f,{p.x-20,p.y-20,40,40}}); }
+    }
+    void removeCrashedVehicles(const std::vector<int>& ids) {
+        for(auto it=exVs.begin();it!=exVs.end();) { if(find(ids.begin(),ids.end(),it->id)!=ids.end()) it=exVs.erase(it); else ++it; }
+        for(auto it=aUTs.begin();it!=aUTs.end();) { if(find(ids.begin(),ids.end(),it->id)!=ids.end()) it=aUTs.erase(it); else ++it; }
+        for(int id:ids) { removeVehicleById(vQ,id); vTurns.erase(id); }
+    }
+    void updateAnims(int cId, int l, const std::vector<CarRect>& cs, Intersection* nb[4], Intersection* g[6], float wF, float dH, const std::vector<CrashEvent>& crs);
