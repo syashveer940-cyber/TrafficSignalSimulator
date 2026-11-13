@@ -233,3 +233,24 @@ Vehicle *c = vQ->front, *pC = nullptr; int qI = 0;
             float tP = max(qI*dH, pC!=nullptr ? pC->pos+dH : 0.f);
             if (c->pos<tP) c->pos=tP; else if (c->pos>tP && sM>0.f) { c->pos -= (3.5f*wF)*sM; if(c->pos<tP) c->pos=tP; }
         }
+pC=c; c=c->next; qI++;
+    }
+}
+
+string getCrashLoc(Vector2 p, Intersection* g[6]) {
+    int nId=0; float mD=1e9f; for(int i=0; i<6; i++) { float d=hypot(p.x-g[i]->center.x,p.y-g[i]->center.y); if(d<mD){ mD=d; nId=i; } }
+    const char* nms[6]={"Int 0 (NW)","Int 1 (N-Mid)","Int 2 (NE)","Int 3 (SW)","Int 4 (S-Mid)","Int 5 (SE)"}; float dx=p.x-g[nId]->center.x, dy=p.y-g[nId]->center.y;
+    if(fabs(dx)<=140.f && fabs(dy)<=140.f) return string(nms[nId])+" Center"; return string(nms[nId])+(fabs(dx)>fabs(dy)?(dx>0?" - East Arm":" - West Arm"):(dy>0?" - South Arm":" - North Arm"));
+}
+
+class IntersectionSimulator {
+private:
+    Intersection* grid[6]; std::vector<Skyscraper> bldgs; std::vector<CrashEvent> crashes; int vCounter, fCounter, lastCr, selLane; Camera2D cam; float spdMult, tAcc, sbProg; bool reckAct, sbOpen, lInpAct; TimeOfDay cTime; WeatherType cWeath; const float SB_W=250.f; std::vector<WeatherParticle> parts; std::vector<UpcomingEntryLane> uLanes; std::string lStrs[10];
+    void initUpcomingLanes() {
+        uLanes = { {0,0,"L1","North-W (Int 0)",Color{0,240,255,255},30,5,0.f,false}, {1,0,"L2","North-Mid (Int 1)",Color{255,235,0,255},45,8,0.f,false}, {2,0,"L3","North-E (Int 2)",Color{255,30,150,255},25,4,0.f,false}, {0,3,"L4","West-Up (Int 0)",Color{255,120,0,255},35,6,0.f,false}, {3,3,"L5","West-Low (Int 3)",Color{30,255,40,255},28,5,0.f,false}, {2,2,"L6","East-Up (Int 2)",Color{190,50,255,255},32,6,0.f,false}, {5,2,"L7","East-Low (Int 5)",Color{255,40,40,255},40,7,0.f,false}, {3,1,"L8","South-W (Int 3)",Color{30,160,255,255},22,4,0.f,false}, {4,1,"L9","South-Mid (Int 4)",Color{255,180,0,255},50,9,0.f,false}, {5,1,"L10","South-E (Int 5)",Color{0,255,190,255},26,5,0.f,false} };
+        selLane=0; lInpAct=false; for(int i=0;i<10;i++) lStrs[i]=to_string(uLanes[i].targetPer30s);
+    }
+    void initParts() { parts.clear(); for(int i=0;i<140;i++) parts.push_back({(float)(rand()%1200),(float)(rand()%800),-1.f+(rand()%100)/100.f*0.5f,6.f+(rand()%100)/100.f*4.f,2.f+(rand()%3)}); }
+    void updateParts() {
+        for(auto& p:parts){ if(cWeath==WEATHER_RAINY){p.y+=p.speedY*1.5f;p.x+=-2.5f;} else if(cWeath==WEATHER_WINTER){p.y+=1.8f;p.x+=sin(fCounter*0.03f+p.y*0.05f)*1.2f;} else if(cWeath==WEATHER_AUTUMN){p.y+=2.6f;p.x+=1.8f+cos(fCounter*0.02f)*0.8f;} else if(cWeath==WEATHER_SPRING){p.y+=1.4f;p.x+=1.5f;} if(p.y>800){p.y=-10;p.x=rand()%1200;} if(p.x<0)p.x=1200; if(p.x>1200)p.x=0; }
+    }
