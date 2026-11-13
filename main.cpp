@@ -212,3 +212,24 @@ void TrafficLane::updateAnims(int cId, int lI, const std::vector<CarRect>& cs, I
             TrafficLane* dL = g[cId]->lanes[it->destLaneIdx];
             if (it->destIsQueue) {
                 insertIntoQueueSorted(dL->vQ, it->id, it->isEmergency?1:0, it->isReckless, it->targetDest, it->destPos, it->uTurnCount, it->originLane);
+Vehicle *c = vQ->front, *pC = nullptr; int qI = 0;
+    while (c != nullptr) {
+        bool isCr = false; for(const auto& cr:crs) if(cr.car1Id==c->id || cr.car2Id==c->id) isCr=true; if(isCr) { pC=c; c=c->next; qI++; continue; }
+        TurnType mT = vTurns.count(c->id) ? vTurns[c->id] : STRAIGHT; float sM = 1.0f;
+        if (c->isReckless) sM = 1.5f; else if (qI==0 || c->pos<=60.f) sM = getSafeYieldMultiplier(lI, c->id, mT, c->pos, cs, center);
+        if (qI==0 || c->isReckless) {
+            if (c->isReckless || state==GREEN_STATE || (state==YELLOW_STATE && c->pos<=20.f)) {
+                bool blk = false; if (!c->isReckless) { for(const auto& ev:exVs) if(ev.pos>-56.f) { blk=true; break; } }
+                if (sM>0.f && !blk) c->pos -= (3.5f*wF)*sM;
+                if (c->pos<=0.f && !blk) {
+                    ExitingVehicle ev = {c->id, c->isEmergency==1, c->isReckless, c->targetDest, mT, c->pos, c->uTurnCount, c->originLane};
+                    int nN = getShortestPath(cId, ev.targetDest, g); TurnType bT = mT;
+                    if (nN!=-1&&nN!=cId) { for(int d=0; d<4; d++) if(nb[d]!=nullptr && nb[d]->id==nN) { bT=getTurnTypeForNeighbor(lI,d); break; } }
+                    else { bool fE=false; for(int d=0; d<4; d++) if(nb[d]==nullptr) { bT=getTurnTypeForNeighbor(lI,d); fE=true; break; } if(!fE) { std::vector<TurnType> tO={mT,STRAIGHT,TURN_RIGHT,TURN_LEFT}; bT=tO[rand()%tO.size()]; } }
+                    ev.turn = bT; exVs.push_back(ev); vTurns.erase(c->id); delete dequeue(vQ); c = vQ->front; continue;
+                }
+            } else if (c->pos>0.f && sM>0.f) { c->pos -= (3.5f*wF)*sM; if(c->pos<0.f) c->pos=0.f; }
+        } else {
+            float tP = max(qI*dH, pC!=nullptr ? pC->pos+dH : 0.f);
+            if (c->pos<tP) c->pos=tP; else if (c->pos>tP && sM>0.f) { c->pos -= (3.5f*wF)*sM; if(c->pos<tP) c->pos=tP; }
+        }
