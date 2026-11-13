@@ -170,3 +170,24 @@ public:
     ~Intersection() { for(int i=0;i<4;i++) delete lanes[i]; }
     void optimizeSignal() { int order[4]={0,2,1,3}; std::vector<int> emg; for(int i=0;i<4;i++) { lanes[i]->setState(RED_STATE); if(lanes[i]->getEmergencyCount()>0) emg.push_back(i); } if(!emg.empty()) { for(int e:emg) lanes[e]->setState(GREEN_STATE); for(int k=0;k<4;k++) if(lanes[order[k]]->getEmergencyCount()>0) actL=order[(k+1)%4]; } else { lanes[actL]->setState(GREEN_STATE); actL=actL==0?2:(actL==2?1:(actL==1?3:0)); } }
     void update(std::vector<CarRect>& cs, Intersection* g[6], float wF, float dH, const std::vector<CrashEvent>& crs) { for(int i=0;i<4;i++) lanes[i]->updateAnims(id,i,cs,neighbors,g,wF,dH,crs); }
+void removeCrashedVehicles(const std::vector<int>& ids) { for(int i=0;i<4;i++) lanes[i]->removeCrashedVehicles(ids); }
+    void drawStopLines() { DrawRectangle(center.x-140,center.y-144,140,4,WHITE); DrawRectangle(center.x,center.y+140,140,4,WHITE); DrawRectangle(center.x+140,center.y-140,4,140,WHITE); DrawRectangle(center.x-144,center.y,4,140,WHITE); }
+};
+
+int getShortestPath(int sId, int tId, Intersection* g[6]) {
+    if(sId==tId) return sId; std::vector<int> p(6,-1), q; std::vector<bool> v(6,false); v[sId]=true; q.push_back(sId); int h=0; bool f=false;
+    while(h<(int)q.size()){ int c=q[h++]; if(c==tId){ f=true; break; } for(int d=0;d<4;d++) { Intersection* n=g[c]->neighbors[d]; if(n!=nullptr&&!v[n->id]){ v[n->id]=true; p[n->id]=c; q.push_back(n->id); } } }
+    if(!f) return -1; int c=tId; while(p[c]!=-1&&p[c]!=sId) c=p[c]; return c;
+}
+
+void TrafficLane::updateAnims(int cId, int lI, const std::vector<CarRect>& cs, Intersection* nb[4], Intersection* g[6], float wF, float dH, const std::vector<CrashEvent>& crs) {
+    for (auto it = aUTs.begin(); it != aUTs.end(); ) {
+        bool isCr = false; for(const auto& c:crs) if(c.car1Id==it->id || c.car2Id==it->id) isCr=true; if(isCr) { ++it; continue; }
+        float d = max(10.f, hypot(it->p0.x-it->p3.x, it->p0.y-it->p3.y)*1.5f), step = (it->isReckless?4.5f:3.f)*wF/d, nT = min(1.f, it->progress+step), u = 1.f-nT;
+        Vector2 nP = {u*u*u*it->p0.x+3*u*u*nT*it->p1.x+3*u*nT*nT*it->p2.x+nT*nT*nT*it->p3.x, u*u*u*it->p0.y+3*u*u*nT*it->p1.y+3*u*nT*nT*it->p2.y+nT*nT*nT*it->p3.y};
+        bool blk = false; if (!it->isReckless) { for(const auto& o:cs) if(o.id!=it->id && hypot(nP.x-(o.rect.x+20), nP.y-(o.rect.y+20))<48.f) { blk=true; break; } }
+        if (!blk) it->progress += step;
+        if (it->progress >= 1.f) {
+            TrafficLane* dL = g[cId]->lanes[it->destLaneIdx];
+            if (it->destIsQueue) {
+                insertIntoQueueSorted(dL->vQ, it->id, it->isEmergency?1:0, it->isReckless, it->targetDest, it->destPos, it->uTurnCount, it->originLane);
