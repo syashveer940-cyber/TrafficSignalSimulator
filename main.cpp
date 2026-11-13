@@ -159,3 +159,14 @@ void setState(LightState s) { state = s; } LightState getState() const { return 
         DrawRectangle(bX,bY,46,113,{40,40,40,255}); DrawRectangleLines(bX,bY,46,113,BLACK);
         DrawCircle(bX+23,bY+24,13,state==RED_STATE?Color{255,40,40,255}:Color{100,0,0,255}); DrawCircleLines(bX+23,bY+24,13,BLACK);
         DrawCircle(bX+23,bY+56,13,state==YELLOW_STATE?Color{255,230,20,255}:Color{100,100,0,255}); DrawCircleLines(bX+23,bY+56,13,BLACK);
+DrawCircle(bX+23,bY+88,13,state==GREEN_STATE?Color{40,255,40,255}:Color{0,100,0,255}); DrawCircleLines(bX+23,bY+88,13,BLACK);
+    }
+};
+
+class Intersection {
+public:
+    int id; Vector2 center; TrafficLane* lanes[4]; Intersection* neighbors[4]; int actL;
+    Intersection(int iId, float cx, float cy) { id=iId; center={cx,cy}; actL=0; for(int i=0;i<4;i++) neighbors[i]=nullptr; lanes[0]=new TrafficLane(cx-175,cy-220,center); lanes[1]=new TrafficLane(cx+145,cy+145,center); lanes[2]=new TrafficLane(cx+145,cy-220,center); lanes[3]=new TrafficLane(cx-175,cy+145,center); }
+    ~Intersection() { for(int i=0;i<4;i++) delete lanes[i]; }
+    void optimizeSignal() { int order[4]={0,2,1,3}; std::vector<int> emg; for(int i=0;i<4;i++) { lanes[i]->setState(RED_STATE); if(lanes[i]->getEmergencyCount()>0) emg.push_back(i); } if(!emg.empty()) { for(int e:emg) lanes[e]->setState(GREEN_STATE); for(int k=0;k<4;k++) if(lanes[order[k]]->getEmergencyCount()>0) actL=order[(k+1)%4]; } else { lanes[actL]->setState(GREEN_STATE); actL=actL==0?2:(actL==2?1:(actL==1?3:0)); } }
+    void update(std::vector<CarRect>& cs, Intersection* g[6], float wF, float dH, const std::vector<CrashEvent>& crs) { for(int i=0;i<4;i++) lanes[i]->updateAnims(id,i,cs,neighbors,g,wF,dH,crs); }
