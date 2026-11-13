@@ -254,3 +254,24 @@ private:
     void updateParts() {
         for(auto& p:parts){ if(cWeath==WEATHER_RAINY){p.y+=p.speedY*1.5f;p.x+=-2.5f;} else if(cWeath==WEATHER_WINTER){p.y+=1.8f;p.x+=sin(fCounter*0.03f+p.y*0.05f)*1.2f;} else if(cWeath==WEATHER_AUTUMN){p.y+=2.6f;p.x+=1.8f+cos(fCounter*0.02f)*0.8f;} else if(cWeath==WEATHER_SPRING){p.y+=1.4f;p.x+=1.5f;} if(p.y>800){p.y=-10;p.x=rand()%1200;} if(p.x<0)p.x=1200; if(p.x>1200)p.x=0; }
     }
+float getWSpeed() const { return cWeath==WEATHER_SUMMER?1.05f:cWeath==WEATHER_SPRING?1.0f:cWeath==WEATHER_AUTUMN?0.92f:cWeath==WEATHER_RAINY?0.82f:0.72f; }
+    float getDHead() const { return cWeath==WEATHER_SUMMER?60.f:cWeath==WEATHER_SPRING?62.f:cWeath==WEATHER_AUTUMN?66.f:cWeath==WEATHER_RAINY?72.f:78.f; }
+    int getCap() const { int b=cTime==TIME_MORNING?110:cTime==TIME_AFTERNOON?60:cTime==TIME_EVENING?90:20; float m=cWeath==WEATHER_SUMMER?1.06f:cWeath==WEATHER_SPRING?1.f:cWeath==WEATHER_AUTUMN?0.95f:cWeath==WEATHER_RAINY?0.9f:0.8f; return (int)(b*m); }
+    void updateTargets() {
+        int tt=getCap()/2, bW[10]={5,8,4,6,5,6,7,4,9,5}, tUw=0, lU=-1; for(int i=0;i<10;i++) if(!uLanes[i].isUserCustomized){ tUw+=bW[i]; lU=i; }
+        if(tUw>0){ int cS=0; for(int i=0;i<10;i++) if(uLanes[i].isUserCustomized) cS+=uLanes[i].targetPer30s; int rT=max(0,tt-cS), rS=0; for(int i=0;i<10;i++) if(!uLanes[i].isUserCustomized){ int a=i==lU?max(0,rT-rS):round(((float)bW[i]/tUw)*rT); uLanes[i].targetPer30s=max(0,a); rS+=a; if(!lInpAct||selLane!=i) lStrs[i]=to_string(uLanes[i].targetPer30s); } }
+    }
+    void genCity() {
+        int xR[4][2]={{-1460,-140},{140,1060},{1340,2260},{2540,3860}}, yR[3][2]={{-1160,60},{340,1260},{1540,2760}}; Color cls[8]={{70,100,130,255},{140,85,75,255},{110,115,85,255},{120,110,105,255},{85,95,110,255},{105,85,110,255},{70,115,110,255},{140,125,105,255}};
+        for(int r=0; r<3; r++) for(int c=0; c<4; c++) {
+            float bW=xR[c][1]-xR[c][0], bH=yR[r][1]-yR[r][0], sX=xR[c][0]+(bW-((int)(bW/115.f-1)*115.f+90.f))/2.f, sY=yR[r][0]+(bH-((int)(bH/115.f-1)*115.f+90.f))/2.f;
+            for(int i=0; i<(int)(bW/115.f); i++) for(int j=0; j<(int)(bH/115.f); j++) {
+                Skyscraper b; b.base={sX+i*115.f,sY+j*115.f,90.f,90.f}; b.col=cls[rand()%8]; bool olap=false;
+                for(int cx:{0,1200,2400}) for(int cy:{200,1400}) { Rectangle ls[4]={{(float)cx-175,(float)cy-220,46,113},{(float)cx+145,(float)cy+145,46,113},{(float)cx+145,(float)cy-220,46,113},{(float)cx-175,(float)cy+145,46,113}}; for(int l=0;l<4;l++) if(CheckCollisionRecs({b.base.x-10,b.base.y-10,110,110},ls[l])) olap=true; }
+                if(!olap) bldgs.push_back(b);
+            }
+        }
+    }
+    void drawRds() {
+        for(int x:{0,1200,2400}) { DrawRectangle(x-140,-1200,280,4200,GRAY); for(int y=-1200;y<3000;y+=40){ bool inI=false; for(int cy:{200,1400}) if(abs(y-cy)<140) inI=true; if(!inI) DrawRectangle(x-2,y+10,4,20,YELLOW); } }
+        for(int y:{200,1400}) { DrawRectangle(-1600,y-140,5600,280,GRAY); for(int x=-1600;x<4000;x+=40){ bool inI=false; for(int cx:{0,1200,2400}) if(abs(x-cx)<140) inI=true; if(!inI) DrawRectangle(x+10,y-2,20,4,YELLOW); }
