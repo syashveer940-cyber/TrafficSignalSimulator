@@ -148,3 +148,14 @@ public:
         for(int id:ids) { removeVehicleById(vQ,id); vTurns.erase(id); }
     }
     void updateAnims(int cId, int l, const std::vector<CarRect>& cs, Intersection* nb[4], Intersection* g[6], float wF, float dH, const std::vector<CrashEvent>& crs);
+void setState(LightState s) { state = s; } LightState getState() const { return state; } int getQueueSize() const { return vQ->totalCount; } int getEmergencyCount() const { return vQ->emergencyCount; }
+    void drawCars(int l, TimeOfDay tod, const std::vector<CrashEvent>& crs) {
+        auto isCrash = [&](int id){for(const auto& c:crs) if(c.car1Id==id||c.car2Id==id) return true; return false;};
+        for(Vehicle* c=vQ->front; c; c=c->next) { if(c->pos>1400.f || isCrash(c->id)) continue; TurnType t=vTurns.count(c->id)?vTurns.at(c->id):STRAIGHT; drawVehicle(computeVehiclePosition(l,t,c->pos,center),getLaneDirection(l,t,c->pos,center),c->isEmergency==1,c->isReckless,tod); }
+        for(const auto& e:exVs) { if(isCrash(e.id)) continue; drawVehicle(computeVehiclePosition(l,e.turn,e.pos,center),getLaneDirection(l,e.turn,e.pos,center),e.isEmergency,e.isReckless,tod); }
+        for(const auto& u:aUTs) { if(isCrash(u.id)) continue; float t=u.progress,v=1.f-t; Vector2 dir={u.p3.x-u.p0.x,u.p3.y-u.p0.y}; float dL=hypot(dir.x,dir.y); if(dL>0.001f){dir.x/=dL; dir.y/=dL;} else dir={0,1}; drawVehicle({v*v*v*u.p0.x+3*v*v*t*u.p1.x+3*v*t*t*u.p2.x+t*t*t*u.p3.x,v*v*v*u.p0.y+3*v*v*t*u.p1.y+3*v*t*t*u.p2.y+t*t*t*u.p3.y},dir,u.isEmergency,u.isReckless,tod); }
+    }
+    void drawLights() {
+        DrawRectangle(bX,bY,46,113,{40,40,40,255}); DrawRectangleLines(bX,bY,46,113,BLACK);
+        DrawCircle(bX+23,bY+24,13,state==RED_STATE?Color{255,40,40,255}:Color{100,0,0,255}); DrawCircleLines(bX+23,bY+24,13,BLACK);
+        DrawCircle(bX+23,bY+56,13,state==YELLOW_STATE?Color{255,230,20,255}:Color{100,100,0,255}); DrawCircleLines(bX+23,bY+56,13,BLACK);
