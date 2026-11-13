@@ -296,3 +296,24 @@ public:
     ~IntersectionSimulator() { for(int i=0;i<6;i++) delete grid[i]; }
     void genTraf() {
         int lF[10]={0}, tA=0; getActCnt(lF,tA); float dH=getDHead(); bool sR=false; if(crashes.empty()&&!reckAct&&(fCounter-lastCr>5400)){ sR=true; reckAct=true; }
+for(size_t i=0; i<uLanes.size(); i++){
+            auto& l=uLanes[i]; if(l.targetPer30s>0){ float fI=1800.f/l.targetPer30s; l.spawnTimer+=1.f; if(l.spawnTimer>=fI && lF[i]<l.targetPer30s){ bool sC=true; for(Vehicle* c=grid[l.intId]->lanes[l.laneIdx]->vQ->front; c; c=c->next) if(c->pos>650.f-dH){ sC=false; break; }
+            if(sC){ int dest=i<=2?3+(rand()%3):i==3||i==4?(rand()%2==0?2:5):i==5||i==6?(rand()%2==0?0:3):rand()%3; grid[l.intId]->lanes[l.laneIdx]->addVehicle(++vCounter,false,sR,dest,getTurnTypeForNeighbor(l.laneIdx,rand()%4),650.f,dH,(int)i); if(sR)sR=false; lF[i]++; tA++; l.spawnTimer-=fI; } } }
+        }
+    }
+    void upLogic() {
+        fCounter++; updateParts(); if(fCounter%180==135) for(int i=0;i<6;i++) for(int j=0;j<4;j++) if(grid[i]->lanes[j]->getState()==GREEN_STATE) grid[i]->lanes[j]->setState(YELLOW_STATE);
+        if(fCounter%180==0) for(int i=0;i<6;i++) grid[i]->optimizeSignal(); genTraf(); std::vector<CarRect> aC; for(int i=0;i<6;i++) for(int j=0;j<4;j++) grid[i]->lanes[j]->getAllCarRects(j,aC);
+        bool hasR=false; for(const auto& c:aC) if(c.isReckless) hasR=true; if(!hasR&&crashes.empty()) reckAct=false;
+        for(size_t i=0;i<aC.size();i++) for(size_t j=i+1;j<aC.size();j++) if(aC[i].id!=aC[j].id && hypot(aC[i].rect.x-aC[j].rect.x,aC[i].rect.y-aC[j].rect.y)<38.f && (aC[i].isReckless||aC[j].isReckless) && crashes.empty()){ crashes.push_back({{(aC[i].rect.x+aC[j].rect.x)/2.f+20.f,(aC[i].rect.y+aC[j].rect.y)/2.f+20.f},1800,aC[i].id,aC[j].id}); lastCr=fCounter; reckAct=false; }
+        std::vector<int> cErase; for(auto it=crashes.begin(); it!=crashes.end(); ){ it->framesLeft--; if(it->framesLeft<=0){ cErase.push_back(it->car1Id); cErase.push_back(it->car2Id); it=crashes.erase(it); } else ++it; }
+        if(!cErase.empty()){ std::sort(cErase.begin(),cErase.end()); cErase.erase(std::unique(cErase.begin(),cErase.end()),cErase.end()); for(int i=0;i<6;i++) grid[i]->removeCrashedVehicles(cErase); }
+        float wS=getWSpeed(), dH=getDHead(); for(int i=0;i<6;i++){ std::vector<CarRect> lC; for(int j=0;j<4;j++) grid[i]->lanes[j]->getAllCarRects(j,lC); grid[i]->update(lC,grid,wS,dH,crashes); }
+    }
+    void drwLogic() {
+        BeginDrawing(); Color skyB[4]={{45,48,55,255},{52,58,65,255},{40,30,42,255},{14,16,22,255}}; ClearBackground(skyB[cTime]); BeginMode2D(cam); drawRds(); drawZebra(); for(int i=0;i<6;i++) grid[i]->drawStopLines();
+        for(const auto& b:bldgs){ DrawRectangleRec({b.base.x+8.f,b.base.y+8.f,b.base.width,b.base.height},Fade(BLACK,0.4f)); DrawRectangleRec(b.base,b.col); DrawRectangleLinesEx(b.base,2.f,AdjustBrightness(b.col,-0.3f)); DrawRectangleRec({b.base.x+b.base.width*.3f,b.base.y+b.base.height*.3f,b.base.width*.4f,b.base.height*.4f},AdjustBrightness(b.col,0.1f)); DrawRectangleLinesEx({b.base.x+b.base.width*.3f,b.base.y+b.base.height*.3f,b.base.width*.4f,b.base.height*.4f},1.5f,AdjustBrightness(b.col,-0.1f)); if(cTime==TIME_NIGHT||cTime==TIME_EVENING){ DrawRectangle(b.base.x+8,b.base.y+8,8,8,Fade(YELLOW,0.7f)); DrawRectangle(b.base.x+b.base.width-16,b.base.y+8,8,8,Fade(YELLOW,0.7f)); DrawRectangle(b.base.x+8,b.base.y+b.base.height-16,8,8,Fade(YELLOW,0.7f)); DrawRectangle(b.base.x+b.base.width-16,b.base.y+b.base.height-16,8,8,Fade(YELLOW,0.7f)); } }
+        for(int i=0;i<6;i++) for(int j=0;j<4;j++) grid[i]->lanes[j]->drawCars(j,cTime,crashes);
+        for(const auto& c:crashes){ DrawCircle(c.pos.x,c.pos.y,48.f,RED); DrawCircle(c.pos.x,c.pos.y,42.f,Fade(WHITE,0.95f)); DrawLineEx({c.pos.x-26.f,c.pos.y-26.f},{c.pos.x+26.f,c.pos.y+26.f},16.f,RED); DrawLineEx({c.pos.x-26.f,c.pos.y+26.f},{c.pos.x+26.f,c.pos.y-26.f},16.f,RED); }
+        for(int i=0;i<6;i++) for(int j=0;j<4;j++) grid[i]->lanes[j]->drawLights();
+        if(cTime==TIME_NIGHT) DrawRectangle(-2500,-2000,7500,6500,Fade(BLACK,0.40f)); else if(cTime==TIME_EVENING) DrawRectangle(-2500,-2000,7500,6500,Fade(Color{255,110,40,255},0.08f)); else if(cTime==TIME_MORNING) DrawRectangle(-2500,-2000,7500,6500,Fade(Color{255,220,150,255},0.06f));
