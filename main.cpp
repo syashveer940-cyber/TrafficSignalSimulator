@@ -275,3 +275,24 @@ float getWSpeed() const { return cWeath==WEATHER_SUMMER?1.05f:cWeath==WEATHER_SP
     void drawRds() {
         for(int x:{0,1200,2400}) { DrawRectangle(x-140,-1200,280,4200,GRAY); for(int y=-1200;y<3000;y+=40){ bool inI=false; for(int cy:{200,1400}) if(abs(y-cy)<140) inI=true; if(!inI) DrawRectangle(x-2,y+10,4,20,YELLOW); } }
         for(int y:{200,1400}) { DrawRectangle(-1600,y-140,5600,280,GRAY); for(int x=-1600;x<4000;x+=40){ bool inI=false; for(int cx:{0,1200,2400}) if(abs(x-cx)<140) inI=true; if(!inI) DrawRectangle(x+10,y-2,20,4,YELLOW); }
+}
+    void drawZebra() {
+        for(size_t i=0; i<uLanes.size(); i++){
+            const auto& l=uLanes[i]; Vector2 c=grid[l.intId]->center; bool isS=(i==(size_t)selLane);
+            if(l.laneIdx==0){ for(int s=0;s<5;s++) DrawRectangle(c.x-118+s*20,c.y-660,15,48,l.color); if(isS) DrawRectangleLinesEx({c.x-120,c.y-662,98,52},2.f,WHITE); }
+            else if(l.laneIdx==1){ for(int s=0;s<5;s++) DrawRectangle(c.x+22+s*20,c.y+660,15,48,l.color); if(isS) DrawRectangleLinesEx({c.x+20,c.y+658,98,52},2.f,WHITE); }
+            else if(l.laneIdx==2){ for(int s=0;s<5;s++) DrawRectangle(c.x+740,c.y-118+s*20,48,15,l.color); if(isS) DrawRectangleLinesEx({c.x+738,c.y-120,52,98},2.f,WHITE); }
+            else if(l.laneIdx==3){ for(int s=0;s<5;s++) DrawRectangle(c.x-740,c.y+22+s*20,48,15,l.color); if(isS) DrawRectangleLinesEx({c.x-742,c.y+20,52,98},2.f,WHITE); }
+        }
+    }
+public:
+    void getActCnt(int lF[10], int& tA) const { for(int i=0;i<10;i++) lF[i]=0; tA=0; for(int i=0;i<6;i++) for(int j=0;j<4;j++){ for(Vehicle* c=grid[i]->lanes[j]->vQ->front;c;c=c->next) { if(c->originLane>=0&&c->originLane<10) lF[c->originLane]++; tA++; } for(const auto& ev:grid[i]->lanes[j]->exVs) { if(ev.originLane>=0&&ev.originLane<10) lF[ev.originLane]++; tA++; } for(const auto& ut:grid[i]->lanes[j]->aUTs) { if(ut.originLane>=0&&ut.originLane<10) lF[ut.originLane]++; tA++; } } }
+    IntersectionSimulator() {
+        grid[0]=new Intersection(0,0,200); grid[1]=new Intersection(1,1200,200); grid[2]=new Intersection(2,2400,200); grid[3]=new Intersection(3,0,1400); grid[4]=new Intersection(4,1200,1400); grid[5]=new Intersection(5,2400,1400);
+        for(int r=0;r<2;r++) for(int c=0;c<3;c++){ int i=r*3+c; if(r>0) grid[i]->neighbors[0]=grid[(r-1)*3+c]; if(r<1) grid[i]->neighbors[1]=grid[(r+1)*3+c]; if(c<2) grid[i]->neighbors[2]=grid[r*3+c+1]; if(c>0) grid[i]->neighbors[3]=grid[r*3+c-1]; }
+        vCounter=1000; fCounter=0; lastCr=-5400; reckAct=false; srand(time(0)); cam={0}; cam.target={1200.f,800.f}; cam.offset={600.f,400.f}; cam.rotation=0.f; cam.zoom=0.25f; cTime=TIME_MORNING; cWeath=WEATHER_SUMMER; sbOpen=true; sbProg=1.f;
+        initUpcomingLanes(); updateTargets(); initParts(); genCity(); spdMult=1.f; tAcc=0.f;
+    }
+    ~IntersectionSimulator() { for(int i=0;i<6;i++) delete grid[i]; }
+    void genTraf() {
+        int lF[10]={0}, tA=0; getActCnt(lF,tA); float dH=getDHead(); bool sR=false; if(crashes.empty()&&!reckAct&&(fCounter-lastCr>5400)){ sR=true; reckAct=true; }
