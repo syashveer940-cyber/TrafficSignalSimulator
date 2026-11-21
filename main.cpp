@@ -87,7 +87,7 @@ PathInfo getPathInfo(int l, TurnType t, Vector2 c) {
         else if(t==TURN_RIGHT){i.p1={c.x-70,c.y+70}; i.p2={c.x-70,c.y+140}; i.exitDir={0,1};}
         else if(t==TURN_LEFT){i.p1={c.x+70,c.y+70}; i.p2={c.x+70,c.y-140}; i.exitDir={0,-1};}
         else{i.p1={c.x+40,c.y}; i.p2={c.x-140,c.y-70}; i.exitDir={-1,0};}
-    } return i;
+    } return i;//returning to i
 }
 Vector2 computeVehiclePosition(int l, TurnType t, float p, Vector2 c) {
     if(p>0.0f) { if(l==0)return{c.x-70,c.y-140-p}; if(l==1)return{c.x+70,c.y+140+p}; if(l==2)return{c.x+140+p,c.y-70}; return{c.x-140-p,c.y+70}; }
